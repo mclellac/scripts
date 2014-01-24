@@ -1,0 +1,90 @@
+#!/bin/bash
+# ============================================================================
+# cleanuphome:
+#
+#   A simple shell script to remove backup files from your home directory
+#
+# Author: Carey McLelland <carey.mclelland@cbc.ca>
+# ============================================================================
+###
+args=$#
+regex='.*(~|bak|swp|DS_Store)$'
+regex_len=${#regex[*]}
+sep=$(printf "%-73s" "-")
+dir="${HOME}"
+tmp="${HOME}/.`basename "$0"`.log"
+os=`uname`
+green='\033[00;32m'
+red='\033[01;31m'
+white='\033[00;00m'
+errquit()    { msgwarn $err; exit 1; }
+msgsuccess() { msginfo $msg; }
+msginfo()    { message=${@:-"${white}Error: No message passed"}; printf "${green}${message}${white}\n"; }
+msgwarn()    { message=${@:-"${white}Error: No message passed"}; printf "${red}${message}${white}\n";   }
+
+argchk() {
+    if [ ! -d $1 ]; then
+        msgwarn "$1 is not a directory. Defaulting to ${HOME}"
+        msgwarn "${sep// /-}"
+        sanitychk
+    else
+        dir=$1
+        sanitychk
+    fi
+}
+
+sanitychk() {
+  if [ $os = 'Linux' ]; then
+    agnostic_find="find ${dir} -regextype posix-extended -regex"
+  elif [ $os = 'FreeBSD' ] || [ $os = 'Darwin' ]; then
+    agnostic_find="find -E ${dir} -type f -regex"
+  fi
+
+  if [ -f ${tmp} ]; then
+    rm $tmp
+    msgwarn "removing "${tmp}""
+  fi
+}
+
+separator() {
+    msginfo "${sep// /-}"
+}
+
+if [ $args != 0 ]; then
+  argchk "$@"
+else
+  sanitychk
+fi
+
+for (( i=0; i<=$(( $regex_len -1 )); i++ )); do
+  filelist=`(${agnostic_find} ${regex}) > ${tmp}` 
+done
+
+cat "${tmp}" | sed 's/\ /\\ /g' > "${tmp}.1"
+fnum=`cat "${tmp}.1" | wc -l`
+
+separator
+if [ $fnum -eq 1 ]; then
+  msginfo "${fnum} file to be removed."
+else
+  msginfo "${fnum} files to be removed."
+fi
+separator
+
+OLDIFS=$IFS
+IFS=$'\n'
+[ ! -f ${tmp}.1 ] && { echo "${tmp}.1 file not found"; exit 99; }
+while read line; do
+  msgwarn ${line}
+  rm ${line}
+done < ${tmp}.1
+# reset IFS
+IFS=$OLDIFS
+
+# clean up the cleanup
+rm "$tmp" "${tmp}.1"
+
+# only print the separator if files were removed.
+if [ $fnum -gt 0 ]; then
+  separator
+fi
