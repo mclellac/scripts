@@ -23,6 +23,20 @@ ext_len=${#ext_regex[*]}
 args=$#
 sep=$(printf "%-73s" "-")
 tmp="${HOME}/.tmp-changeme-basename-and-date.txt"
+green='\033[00;32m'
+red='\033[01;31m'
+white='\033[00;00m'
+# 
+errquit()    { msgwarn $err; exit 1; }
+msgsuccess() { msginfo $msg; }
+msginfo()    { message=${@:-"${white}Error: No message passed"}; printf "${green}${message}${white}\n"; }
+msgwarn()    { message=${@:-"${white}Error: No message passed"}; printf "${red}${message}${white}\n";   }
+separator()  { msgstr "${sep// /-}" }
+header() {
+    separator
+    msgstr "| Filetype\t| LOC\t\t| # of files\t| Avg LOC per file\t|"
+    separator
+}
 
 main() {
     # Linux:   find .    -regex ".*\.(txt\|png\|doc\|xml\)$"
@@ -74,32 +88,6 @@ argchk() {
         search_path=$1
         main
     fi
-}
-
-msgerr() { msgwarn $err; exit 1; }
-
-msgstr() {
-        COLOR='\033[00;32m'     # bold green
-        RESET='\033[00;00m'     # normal white
-        MESSAGE=${@:-"${RESET}Error: No message passed"}
-        echo -e "${COLOR}${MESSAGE}${RESET}"
-}
- 
-msgwarn() {
-        COLOR='\033[01;31m'     # bold red
-        RESET='\033[00;00m'     # normal white
-        MESSAGE=${@:-"${RESET}Error: No message passed"}
-        echo -e "${COLOR}${MESSAGE}${RESET}"
-}
-
-header() {
-    separator
-    msgstr "| Filetype\t| LOC\t\t| # of files\t| Avg LOC per file\t|"
-    separator
-}
-
-separator() {
-    msgstr "${sep// /-}"
 }
 
 total() {
