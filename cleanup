@@ -21,7 +21,10 @@ errquit()    { msgwarn $err; exit 1; }
 msgsuccess() { msginfo $msg; }
 msginfo()    { message=${@:-"${white}Error: No message passed"}; printf "${green}${message}${white}\n"; }
 msgwarn()    { message=${@:-"${white}Error: No message passed"}; printf "${red}${message}${white}\n";   }
-separator()  { msginfo "${sep// /-}" }
+separator()  { msginfo "{$sep// /-"} }
+separator()  {
+    msginfo "${sep// /-}"
+}
 
 argchk() {
     if [ ! -d $1 ]; then
