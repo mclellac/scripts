@@ -35,26 +35,26 @@ argchk() {
 }
 
 sanitychk() {
-  if [ $os = 'Linux' ]; then
-    agnostic_find="find ${dir} -regextype posix-extended -regex"
-  elif [ $os = 'FreeBSD' ] || [ $os = 'Darwin' ]; then
-    agnostic_find="find -E ${dir} -type f -regex"
-  fi
+    if [ $os = 'Linux' ]; then
+        agnostic_find="find ${dir} -regextype posix-extended -regex"
+    elif [ $os = 'FreeBSD' ] || [ $os = 'Darwin' ]; then
+        agnostic_find="find -E ${dir} -type f -regex"
+    fi
 
-  if [ -f ${tmp} ]; then
-    rm $tmp
-    msgwarn "removing "${tmp}""
-  fi
+    if [ -f ${tmp} ]; then
+        rm $tmp
+        msgwarn "removing "${tmp}""
+    fi
 }
 
 if [ $args != 0 ]; then
-  argchk "$@"
+    argchk "$@"
 else
-  sanitychk
+    sanitychk
 fi
 
 for (( i=0; i<=$(( $regex_len -1 )); i++ )); do
-  filelist=`(${agnostic_find} ${regex}) > ${tmp}` 
+    filelist=`(${agnostic_find} ${regex}) > ${tmp}` 
 done
 
 cat "${tmp}" | sed 's/\ /\\ /g' > "${tmp}.1"
@@ -62,9 +62,9 @@ fnum=`cat "${tmp}.1" | wc -l`
 
 separator
 if [ $fnum -eq 1 ]; then
-  msginfo "${fnum} file to be removed."
+    msginfo "${fnum} file to be removed."
 else
-  msginfo "${fnum} files to be removed."
+    msginfo "${fnum} files to be removed."
 fi
 separator
 
@@ -72,8 +72,8 @@ OLDIFS=$IFS
 IFS=$'\n'
 [ ! -f ${tmp}.1 ] && { echo "${tmp}.1 file not found"; exit 99; }
 while read line; do
-  msgwarn ${line}
-  rm ${line}
+    msgwarn ${line}
+    rm ${line}
 done < ${tmp}.1
 # reset IFS
 IFS=$OLDIFS
@@ -83,5 +83,5 @@ rm "$tmp" "${tmp}.1"
 
 # only print the separator if files were removed.
 if [ $fnum -gt 0 ]; then
-  separator
+    separator
 fi
