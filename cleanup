@@ -1,89 +1,117 @@
 #!/bin/bash
-# ============================================================================
-# cleanuphome:
-#
-#   A simple shell script to remove backup files from your home directory
-#
-# Author: Carey McLelland <carey.mclelland@cbc.ca>
-# ============================================================================
-###
-args=$#
-regex='.*(~|bak|swp|DS_Store)$'
-regex_len=${#regex[*]}
-sep=$(printf "%-73s" "-")
-dir="${HOME}"
-tmp="${HOME}/.`basename "$0"`.log"
-os=`uname`
-green='\033[00;32m'
-red='\033[01;31m'
-white='\033[00;00m'
+#────────────────────────────────────────────────────────────────────────────────
+# cleanuphome
+#────────────────────────────────────────────────────────────────────────────────
+# A simple shell script to remove .bak, .swp, .DS_Store, and *~ files.
+#────────────────────────────────────────────────────────────────────────────────
+# Author(s): 
+#   Carey McLelland <carey.mclelland@cbc.ca>
+#────────────────────────────────────────────────────────────────────────────────
+ARGS=$#
+REGEX='.*(~|bak|swp|DS_Store)$'
+REGEX_LEN=${#REGEX[*]}
+DEFAULT_DIR="${HOME}"
+TEMP_DIR="${HOME}/.`basename "$0"`.log"
+# colors
+GREY="$(tput bold ; tput setaf 0)"
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+CYAN=$(tput setaf 6)
+WHITE=$(tput setaf 7)
+YELLOW=$(tput setaf 11)
+BLUE=$(tput setaf 68)
+BROWN=$(tput setaf 130)
+ORANGE=$(tput setaf 172)
+RESET=$(tput sgr0)
 errquit()    { msgwarn $err; exit 1; }
 msgsuccess() { msginfo $msg; }
-msginfo()    { message=${@:-"${white}Error: No message passed"}; printf "${green}${message}${white}\n"; }
-msgwarn()    { message=${@:-"${white}Error: No message passed"}; printf "${red}${message}${white}\n";   }
-separator()  {
-    msginfo "${sep// /-}"
-}
+msginfo()    { message=${@:-"${WHITE}Error: No message passed"}; printf "${GREEN}${message}${WHITE}\n"; }
+msgwarn()    { message=${@:-"${WHITE}Error: No message passed"}; printf "${RED}${message}${WHITE}\n";   }
 
 argchk() {
     if [ ! -d $1 ]; then
         msgwarn "$1 is not a directory. Defaulting to ${HOME}"
-        msgwarn "${sep// /-}"
         sanitychk
     else
-        dir=$1
+        DEFAULT_DIR=$1
         sanitychk
     fi
+}
+
+msg_box() {
+    local term_width=80  # this should be dynamic with: term_width=`stty size | cut -d ' ' -f 2`
+    local str=("$@") msg_width
+
+    printf '\n'
+    
+    for line in "${str[@]}"; do
+        ((msg_width<${#line})) && { msg_width="${#line}"; }
+
+        if [ $msg_width -gt $term_width ]; then
+            error_quit "error: msg_box() >> \$msg_width exceeds \$term_width. Split message into multiple lines or decrease the number of characters.\n"
+        fi
+
+        x=$(($term_width - $msg_width))
+        pad=$(($x / 2))
+    done
+    
+    # draw box
+    printf '%s┌' "${ORANGE}" && printf '%.0s─' {0..79} && printf '┐\n' && printf '│%79s │\n'
+    
+    for line in "${str[@]}"; do
+        rpad=$((80 - $pad - $msg_width)) # make sure to close with width 80
+        printf "│%$pad.${pad}s" && printf '%s%*s' "$YELLOW" "-$msg_width" "$line" "${ORANGE}" && printf "%$rpad.${rpad}s│\n"
+    done
+    
+    printf '│%79s │\n' && printf  '└' && printf '%.0s─' {0..79}  && printf '┘\n%s' ${RESET}
 }
 
 sanitychk() {
-    if [ $os = 'Linux' ]; then
-        agnostic_find="find ${dir} -regextype posix-extended -regex"
-    elif [ $os = 'FreeBSD' ] || [ $os = 'Darwin' ]; then
-        agnostic_find="find -E ${dir} -type f -regex"
+    if [[ $OSTYPE == 'linux-gnu' ]]; then
+        agnostic_find="find ${DEFAULT_DIR} -regextype posix-extended -regex"
+    elif [[ $OSTYPE == 'freebsd'* ]] || [[ $OSTYPE == 'darwin'* ]]; then
+        agnostic_find="find -E ${DEFAULT_DIR} -type f -regex"
     fi
 
-    if [ -f ${tmp} ]; then
-        rm $tmp
-        msgwarn "removing "${tmp}""
+    if [ -f ${TEMP_DIR} ]; then
+        rm $TEMP_DIR
+        msg_box "removing "${TEMP_DIR}""
     fi
 }
 
-if [ $args != 0 ]; then
+if [ $ARGS != 0 ]; then
     argchk "$@"
 else
     sanitychk
 fi
 
-for (( i=0; i<=$(( $regex_len -1 )); i++ )); do
-    filelist=`(${agnostic_find} ${regex}) > ${tmp}` 
+for (( i=0; i<=$(( $REGEX_LEN -1 )); i++ )); do
+    filelist=`(${agnostic_find} ${REGEX}) > ${TEMP_DIR}` 
 done
 
-cat "${tmp}" | sed 's/\ /\\ /g' > "${tmp}.1"
-fnum=`cat "${tmp}.1" | wc -l`
+cat "${TEMP_DIR}" | sed 's/\ /\\ /g' > "${TEMP_DIR}.1"
+fnum=`cat "${TEMP_DIR}.1" | wc -l`
 
-separator
 if [ $fnum -eq 1 ]; then
-    msginfo "${fnum} file to be removed."
+    msg_box "${fnum} file to be removed."
 else
-    msginfo "${fnum} files to be removed."
+    msg_box "${fnum} files to be removed."
 fi
-separator
 
 OLDIFS=$IFS
 IFS=$'\n'
-[ ! -f ${tmp}.1 ] && { echo "${tmp}.1 file not found"; exit 99; }
+[ ! -f ${TEMP_DIR}.1 ] && { echo "${TEMP_DIR}.1 file not found"; exit 99; }
 while read line; do
     msgwarn ${line}
     rm ${line}
-done < ${tmp}.1
+done < ${TEMP_DIR}.1
 # reset IFS
 IFS=$OLDIFS
 
 # clean up the cleanup
-rm "$tmp" "${tmp}.1"
+rm "$TEMP_DIR" "${TEMP_DIR}.1"
 
 # only print the separator if files were removed.
-if [ $fnum -gt 0 ]; then
-    separator
-fi
+#if [ $fnum -gt 0 ]; then
+#    separator
+#fi
