@@ -4,7 +4,7 @@
 #────────────────────────────────────────────────────────────────────────────────
 # A simple shell script to remove .bak, .swp, .DS_Store, and *~ files.
 #────────────────────────────────────────────────────────────────────────────────
-# Author(s): 
+# Author(s):
 #   Carey McLelland <carey.mclelland@cbc.ca>
 #────────────────────────────────────────────────────────────────────────────────
 ARGS=$#
@@ -43,7 +43,7 @@ msg_box() {
     local str=("$@") msg_width
 
     printf '\n'
-    
+
     for line in "${str[@]}"; do
         ((msg_width<${#line})) && { msg_width="${#line}"; }
 
@@ -54,15 +54,15 @@ msg_box() {
         x=$(($term_width - $msg_width))
         pad=$(($x / 2))
     done
-    
+
     # draw box
     printf '%s┌' "${ORANGE}" && printf '%.0s─' {0..79} && printf '┐\n' && printf '│%79s │\n'
-    
+
     for line in "${str[@]}"; do
         rpad=$((80 - $pad - $msg_width)) # make sure to close with width 80
         printf "│%$pad.${pad}s" && printf '%s%*s' "$YELLOW" "-$msg_width" "$line" "${ORANGE}" && printf "%$rpad.${rpad}s│\n"
     done
-    
+
     printf '│%79s │\n' && printf  '└' && printf '%.0s─' {0..79}  && printf '┘\n%s' ${RESET}
 }
 
@@ -86,7 +86,7 @@ else
 fi
 
 for (( i=0; i<=$(( $REGEX_LEN -1 )); i++ )); do
-    filelist=`(${agnostic_find} ${REGEX}) > ${TEMP_DIR}` 
+    filelist=`(${agnostic_find} ${REGEX}) > ${TEMP_DIR}`
 done
 
 cat "${TEMP_DIR}" | sed 's/\ /\\ /g' > "${TEMP_DIR}.1"

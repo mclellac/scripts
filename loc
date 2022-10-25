@@ -7,6 +7,7 @@ args=$#
 search_path="."
 ext='.*\.(go|xml|dtd|html|htm|js|java|json|rb|css|sh|asm|py|c|cs|php|php4|php5|aspx|asax)$'
 ext_regex=(
+    '.*\.vcl'
     '.*\.(go)'
     '.*\.(xml|dtd)'
     '.*\.(html|htm)'
@@ -23,47 +24,32 @@ ext_len=${#ext_regex[*]}
 args=$#
 sep=$(printf "%-73s" "-")
 tmp="${HOME}/.tmp-changeme-basename-and-date.txt"
-green='\033[00;32m'
-red='\033[01;31m'
-white='\033[00;00m'
-# 
-errquit()    { msgwarn $err; exit 1; }
-msgsuccess() { msginfo $msg; }
-msginfo()    { message=${@:-"${white}Error: No message passed"}; printf "${green}${message}${white}\n"; }
-msgwarn()    { message=${@:-"${white}Error: No message passed"}; printf "${red}${message}${white}\n";   }
-separator()  { msgstr "${sep// /-}" }
-header() {
-    separator
-    msgstr "| Filetype\t| LOC\t\t| # of files\t| Avg LOC per file\t|"
-    separator
-}
 
 main() {
     # Linux:   find .    -regex ".*\.(txt\|png\|doc\|xml\)$"
     # *BSD:    find -E . -regex '.*\.(txt|png|doc|xml)$'
     # also, say no $OSTYPE
     ###
-    os=`uname`
-    if [ $os = 'Linux' ]; then
+    if [ "$OS_TYPE" = "Linux" ]; then
         agnostic_find="find ${search_path} -regex"
         findn="find ${search_path} -type f"
-    elif [ $os = 'FreeBSD' ] || [ $os = 'Darwin' ]; then
+    elif [ "$OS_TYPE" = "FreeBSD" ] || [ "$OS_TYPE" = "Darwin" ]; then
         agnostic_find="find -E ${search_path} -type f -regex"
         findn="find -E ${search_path} -type f -regex"
     fi
 
     header
 
-    for (( i=0; i<=$(( $ext_len -1 )); i++ )); do
+    for (( i = 0; i <= $(( $ext_len -1 )); i++ )); do
         # A roundabout way to get the language from the array, but at this point fuck it.
         ###
-        langtmp=`echo ${ext_regex[$i]}  | cut -c6-9 | cut -f1 -d '|' |  sed 's/)//'`
-        language=`echo $langtmp  | tr '[:lower:]' '[:upper:]'`
+        langtmp=$(echo ${ext_regex[$i]}  | cut -c6-9 | cut -f1 -d '|' |  sed 's/)//')
+        language=$(echo $langtmp  | tr '[:lower:]' '[:upper:]')
 
-        loc=`${agnostic_find} ${ext_regex[$i]} -print0 | xargs -n4 -0 cat | wc -l | sed 's/ //g'`
-        files=`${agnostic_find} ${ext_regex[$i]}  | wc -l | sed 's/ //g'`
+        loc=$(${agnostic_find} ${ext_regex[$i]} -print0 | xargs -n4 -0 cat | wc -l | sed 's/ //g')
+        files=$(${agnostic_find} ${ext_regex[$i]}  | wc -l | sed 's/ //g')
 
-        if [ $loc = '0' ] && [ $files = '0' ]; then
+        if [ ${loc} = '0' ] && [ $files = '0' ]; then
             # set avg_loc_file to zero so it doesn't use the previous value.
             avg_loc_file=0
         else
@@ -72,7 +58,7 @@ main() {
 
         printf "${language},${loc},${files},${avg_loc_file}\n" > $tmp
     done
-    
+
     for x in `(cat $tmp)`; do
         msgstr $x | column -t -x -s','
     done
@@ -90,10 +76,36 @@ argchk() {
     fi
 }
 
+msgerr() { msgwarn $err; exit 1; }
+
+msgstr() {
+        COLOR='\033[00;32m'     # bold green
+        RESET='\033[00;00m'     # normal white
+        MESSAGE=${@:-"${RESET}Error: No message passed"}
+        echo -e "${COLOR}${MESSAGE}${RESET}"
+}
+
+msgwarn() {
+        COLOR='\033[01;31m'     # bold red
+        RESET='\033[00;00m'     # normal white
+        MESSAGE=${@:-"${RESET}Error: No message passed"}
+        echo -e "${COLOR}${MESSAGE}${RESET}"
+}
+
+header() {
+    separator
+    msgstr "| Filetype\t| LOC\t\t| # of files\t| Avg LOC per file\t|"
+    separator
+}
+
+separator() {
+    msgstr "${sep// /-}"
+}
+
 total() {
     total_loc=`${findn} $ext   -print0 | xargs -n4 | wc -l`
     total_files=`${findn} $ext | wc -l`
-    
+
     if [ $total_loc = '0' ] && [ $total_files = '0' ]; then
         # do nothing.
         :
