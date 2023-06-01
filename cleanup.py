@@ -2,6 +2,7 @@
 import argparse
 import logging
 import sys
+import subprocess
 import textwrap
 from pathlib import Path
 
@@ -158,7 +159,6 @@ def check_os_and_set_find():
             logging.exception(f"Failed to remove {TEMP_FILE}: {e}")
             sys.exit(1)
 
-
 def find_files():
     """
     Find files that match the regex and write to temporary file.
@@ -169,13 +169,13 @@ def find_files():
     logger.debug("Finding files")
     try:
         with TEMP_FILE.open("w") as f:
-            for entry in DEFAULT_DIRECTORY.iterdir():
-                if entry.is_file() and entry.name.endswith((".bak", ".swp", ".DS_Store", "~")):
-                    f.write(f"{entry}\n")
+            agnostic_find.append(r".*\.(bak|swp|DS_Store|~)$")
+            agnostic_find.append("-print")
+            result = subprocess.run(agnostic_find, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            f.write(result.stdout)
     except Exception as e:
         logging.exception(f"Failed to find files: {e}")
         sys.exit(1)
-
 
 def count_files():
     """
