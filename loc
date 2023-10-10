@@ -53,20 +53,20 @@ main() {
             # set avg_loc_file to zero so it doesn't use the previous value.
             avg_loc_file=0
         else
-            avg_loc_file=`expr $loc / $files`
+            avg_loc_file=$(expr $loc / $files)
         fi
 
         printf "${language},${loc},${files},${avg_loc_file}\n" > $tmp
     done
 
-    for x in `(cat $tmp)`; do
-        msgstr $x | column -t -x -s','
+    for x in $((cat $tmp)); do
+        msgstr "$x" | column -t -x -s','
     done
     total
 }
 
 argchk() {
-    if [ ! -d $1 ]; then
+    if [ ! -d "$1" ]; then
         msgwarn "$1 is not a directory. Defaulting to ./"
         msgwarn "${sep// /-}"
         main
@@ -76,7 +76,7 @@ argchk() {
     fi
 }
 
-msgerr() { msgwarn $err; exit 1; }
+msgerr() { msgwarn "$err"; exit 1; }
 
 msgstr() {
         COLOR='\033[00;32m'     # bold green
@@ -103,14 +103,14 @@ separator() {
 }
 
 total() {
-    total_loc=`${findn} $ext   -print0 | xargs -n4 | wc -l`
-    total_files=`${findn} $ext | wc -l`
+    total_loc=$(${findn} $ext   -print0 | xargs -n4 | wc -l)
+    total_files=$(${findn} $ext | wc -l)
 
-    if [ $total_loc = '0' ] && [ $total_files = '0' ]; then
+    if [ "$total_loc" = '0' ] && [ "$total_files" = '0' ]; then
         # do nothing.
         :
     else
-        total_avg_loc_file=`expr $total_loc / $total_files`
+        total_avg_loc_file=$(expr $total_loc / $total_files)
     fi
 
     msgstr "${sep// /-}"
