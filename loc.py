@@ -3,9 +3,11 @@ import os
 import argparse
 from collections import defaultdict
 from rich.console import Console
-from rich.progress import Progress
 from rich.table import Table
+from rich import box
+from rich.style import Style
 from typing import Optional, List, Tuple, Dict
+import subprocess
 
 console = Console()
 
@@ -61,8 +63,28 @@ FILENAME_MAPPING: Dict[str, str] = {
     'Dockerfile': 'Dockerfile',
 }
 
+BINARY_EXTENSIONS = {'.gz', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.ico', '.tiff', '.webp', '.pdf', '.exe'}
+
+# Default directories to exclude
+DEFAULT_EXCLUDED_DIRS = {'build', '__pycache__', 'node_modules', 'dist', '.git', '.svn', '.env', '.venv', '.so', 'env', 'venv'}
+
+# Create styles using the custom theme
+header_style = Style.parse("bold #F6D365")
+cell_styles = [
+    Style.parse("#56949f"),
+    Style.parse("#D190E8"),
+    Style.parse("#f6c177"),
+    Style.parse("#286983")
+]
+border_style = Style.parse("#6e6a86")
+footer_style = Style.parse("bold #eb6f92")
+info_style = Style.parse("#A39E9B")
+warning_style = Style.parse("bold #FFE58F")
+error_style = Style.parse("bold #FA5D5D")
+
 
 def detect_language(file_path: str) -> str:
+    """Detect the programming language of a file."""
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             first_line = file.readline().strip()
@@ -78,37 +100,37 @@ def detect_language(file_path: str) -> str:
             return 'Text'
 
     except FileNotFoundError:
-        print(f"File not found: {file_path}")
+        console.print(f"[{error_style}]File not found: {file_path}[/{error_style}]")
         return 'Unknown'
     except UnicodeDecodeError:
-        print(f"Unable to decode file: {file_path}")
         return 'Binary'
     except Exception as e:
-        print(f"Error processing file {file_path}: {e}")
+        console.print(f"[{error_style}]Error processing file {file_path}: {e}[/{error_style}]")
         return 'Unknown'
 
 
 def is_binary_file(file_path: str) -> bool:
-    binary_extensions = ['.gz', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.ico', '.tiff', '.webp', '.pdf']
-    file_ext = os.path.splitext(file_path)[1]
-    return file_ext.lower() in binary_extensions
+    """Check if a file is binary."""
+    try:
+        result = subprocess.run(['file', '--mime', '-b', file_path], capture_output=True, text=True)
+        return 'binary' in result.stdout.lower()
+    except Exception as e:
+        console.print(f"[{error_style}]Error determining file type for {file_path}: {e}[/{error_style}]")
+        return False
 
 
-def count_lines_and_size(start: str, exclude_filetypes: Optional[List[str]] = None, show_progress: bool = True) -> Tuple[int, int, dict, dict]:
+def count_lines_and_size(start: str, exclude_filetypes: Optional[List[str]] = None, exclude_dirs: Optional[set] = None) -> Tuple[int, int, dict, dict]:
+    """Count lines of code and size in a directory."""
     total_lines = 0
     total_size = 0
     file_counts = defaultdict(lambda: {'lines': 0, 'size': 0, 'language': 'Unknown'})
     language_totals = defaultdict(lambda: {'lines': 0, 'size': 0})
 
-    progress = Progress(console=console, auto_refresh=False)
-    if show_progress:
-        task = progress.add_task("[cyan]Analyzing files...", total=os.stat(start).st_size, start=False,
-                                 complete_style="green", start_style="yellow", bar_template='{bar}{info}')
-        progress.start()
+    exclude_dirs = exclude_dirs or DEFAULT_EXCLUDED_DIRS
 
     try:
         for root, dirs, files in os.walk(start):
-            dirs[:] = [d for d in dirs if d != '.git']
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
 
             for file in files:
                 file_path = os.path.join(root, file)
@@ -136,80 +158,104 @@ def count_lines_and_size(start: str, exclude_filetypes: Optional[List[str]] = No
                         language_totals[language]['lines'] += new_lines
                         language_totals[language]['size'] += file_size
                 except (UnicodeDecodeError, OSError) as e:
-                    print(f"Error reading file {file_path}: {e}")
+                    console.print(f"[{error_style}]Error reading file {file_path}: {e}[/{error_style}]")
 
-                if show_progress:
-                    progress.update(task, advance=os.path.getsize(file_path))
-
-        if show_progress:
-            progress.stop()
     except KeyboardInterrupt:
-        console.print("[bold red]Operation cancelled by user.[/bold red]")
-        if show_progress:
-            progress.stop()
+        console.print("[{error_style}]Operation cancelled by user.[/{error_style}]")
 
     return total_lines, total_size, file_counts, language_totals
 
 
 def display_results(total_lines: int, total_size: int, file_counts: dict, language_totals: dict) -> None:
-    file_table = Table(title="[bold cyan]Lines of Code Count and Size by File[/bold cyan]")
+    """Display results using Rich tables."""
+    file_table = Table(title="[bold]Lines of Code Count and Size by File[/bold]", box=box.ROUNDED)
+    file_table.pad_edge = False
+    file_table.expand = False
+    file_table.title_style = header_style
+    file_table.border_style = border_style
 
-    file_table.add_column("File", justify="left", style="cyan", no_wrap=True)
-    file_table.add_column("Lines", justify="right", style="magenta")
-    file_table.add_column("Size (Bytes)", justify="right", style="yellow")
-    file_table.add_column("Language", justify="left", style="yellow")
-    file_table.add_column("Cumulative Total Lines", justify="right", style="green")
-    file_table.add_column("Cumulative Total Size", justify="right", style="green")
+    file_table.add_column("File", justify="left", style=cell_styles[0], no_wrap=True)
+    file_table.add_column("Lines", justify="right", style=cell_styles[1])
+    file_table.add_column("Size", justify="right", style=cell_styles[2])
+    file_table.add_column("Language", justify="left", style=cell_styles[3])
 
-    cumulative_total_lines = 0
-    cumulative_total_size = 0
+    home_dir = os.path.expanduser('~')
 
     for file, info in sorted(file_counts.items(), key=lambda item: item[1]['lines'], reverse=True):
         lines = info['lines']
         size = info['size']
         language = info['language']
-        cumulative_total_lines += lines
-        cumulative_total_size += size
-        file_table.add_row(file, str(lines), str(size), language, str(cumulative_total_lines), str(cumulative_total_size))
+
+        if file.startswith(home_dir):
+            file_display = '~' + file[len(home_dir):]
+        else:
+            file_display = file
+
+        file_size_human_readable = _format_size(size)
+        file_table.add_row(file_display, str(lines), file_size_human_readable, language)
 
     console.print(file_table)
 
-    language_table = Table(title="[bold cyan]Lines of Code Count and Size by Language[/bold cyan]")
+    language_table = Table(title="[bold]Lines of Code Count and Size by Language[/bold]", box=box.ROUNDED)
+    language_table.pad_edge = False
+    language_table.expand = False
+    language_table.title_style = header_style
+    language_table.border_style = border_style
 
-    language_table.add_column("Language", justify="left", style="cyan", no_wrap=True)
-    language_table.add_column("Total Lines", justify="right", style="magenta")
-    language_table.add_column("Total Size (Bytes)", justify="right", style="yellow")
+    language_table.add_column("Language", justify="left", style=cell_styles[0], no_wrap=True)
+    language_table.add_column("Total Lines", justify="right", style=cell_styles[1])
+    language_table.add_column("Total Size", justify="right", style=cell_styles[2])
 
     for language, info in sorted(language_totals.items(), key=lambda item: item[1]['lines'], reverse=True):
         lines = info['lines']
         size = info['size']
-        language_table.add_row(language, str(lines), str(size))
+
+        size_human_readable = _format_size(size)
+        language_table.add_row(language, str(lines), size_human_readable)
 
     console.print(language_table)
-    console.print(f"\n[bold red]Total Lines: {total_lines}, Total Size: {total_size} bytes[/bold red]")
+    console.print(f"\n[bold {warning_style}]Total Lines: {total_lines}, Total Size: {_format_size(total_size)}[/bold {warning_style}]")
+
+    # Additional Metrics
+    total_files = len(file_counts)
+    average_lines = total_lines / total_files if total_files > 0 else 0
+    average_size = total_size / total_files if total_files > 0 else 0
+
+    console.print(f"\n[bold {info_style}]Additional Metrics[/bold {info_style}]")
+    console.print(f"Total Files: {total_files}")
+    console.print(f"Average Lines per File: {average_lines:.2f}")
+
+    # Calculate average size in human-readable format
+    average_size_human_readable = _format_size(average_size)
+    console.print(f"Average Size per File: {average_size_human_readable}")
 
 
-def additional_metrics(file_counts: dict) -> None:
-    average_lines_per_file = sum(info['lines'] for info in file_counts.values()) / len(file_counts)
-    largest_files = sorted(file_counts.items(), key=lambda item: item[1]['size'], reverse=True)[:5]
+def _format_size(size_in_bytes: float) -> str:
+    """Format size in bytes into human-readable format."""
+    if size_in_bytes == 0:
+        return "0 bytes"
 
-    console.print(f"\n[bold cyan]Additional Metrics[/bold cyan]:")
-    console.print(f"Average lines per file: {average_lines_per_file:.2f}")
+    # lets calculate the number of bytes into kilobytes, megabytes etc.
+    units = ['B', 'KB', 'MB', 'GB', 'TB']
+    unit_index = 0
 
-    console.print("\n[bold cyan]Top 5 Largest Files[/bold cyan]:")
-    for idx, (file, info) in enumerate(largest_files, start=1):
-        console.print(f"{idx}. {file} - {info['size']} bytes")
+    while size_in_bytes >= 1024 and unit_index < len(units) - 1:
+        size_in_bytes /= 1024
+        unit_index += 1
+
+    return f"{size_in_bytes:.2f} {units[unit_index]}"
+
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Count lines of code and calculate total size of files in a directory.")
-    parser.add_argument("start_dir", nargs='?', default='.', help="Directory path to analyze (default is current directory)")
-    parser.add_argument("-e", "--exclude", nargs='+', help="File extensions to exclude (space-separated list, e.g., .pyc .exe)")
+    parser = argparse.ArgumentParser(description="Count lines of code in a directory.")
+    parser.add_argument("directory", nargs="?", default=os.getcwd(), help="Directory path to count lines of code.")
+    parser.add_argument("-e", "--exclude", nargs="*", help="File extensions to exclude.")
+    parser.add_argument("-d", "--exclude-dirs", nargs="*", help="Directories to exclude.")
     args = parser.parse_args()
 
-    excluded_extensions = args.exclude or []
-    excluded_extensions.extend(['.gz', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.ico', '.tiff', '.webp', '.pdf'])
+    exclude_filetypes = args.exclude if args.exclude else []
+    exclude_dirs = set(args.exclude_dirs) if args.exclude_dirs else DEFAULT_EXCLUDED_DIRS
 
-    total_lines, total_size, file_counts, language_totals = count_lines_and_size(args.start_dir, exclude_filetypes=excluded_extensions)
+    total_lines, total_size, file_counts, language_totals = count_lines_and_size(args.directory, exclude_filetypes, exclude_dirs)
     display_results(total_lines, total_size, file_counts, language_totals)
-    additional_metrics(file_counts)
