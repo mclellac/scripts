@@ -166,9 +166,9 @@ def count_lines_and_size(start: str, exclude_filetypes: Optional[List[str]] = No
     return total_lines, total_size, file_counts, language_totals
 
 
-def display_results(total_lines: int, total_size: int, file_counts: dict, language_totals: dict) -> None:
+def display_results(total_lines: int, total_size: int, file_counts: dict, language_totals: dict, start_directory: str) -> None:
     """Display results using Rich tables."""
-    file_table = Table(title="[bold]Lines of Code Count and Size by File[/bold]", box=box.ROUNDED)
+    file_table = Table(title="[bold]Lines of Code, Size and File Type[/bold]", box=box.ROUNDED)
     file_table.pad_edge = False
     file_table.expand = False
     file_table.title_style = header_style
@@ -179,15 +179,16 @@ def display_results(total_lines: int, total_size: int, file_counts: dict, langua
     file_table.add_column("Size", justify="right", style=cell_styles[2])
     file_table.add_column("Language", justify="left", style=cell_styles[3])
 
-    home_dir = os.path.expanduser('~')
+    # Sort file_counts by file path alphabetically
+    sorted_files = sorted(file_counts.items(), key=lambda item: item[0])
 
-    for file, info in sorted(file_counts.items(), key=lambda item: item[1]['lines'], reverse=True):
+    for file, info in sorted_files:
         lines = info['lines']
         size = info['size']
         language = info['language']
 
-        if file.startswith(home_dir):
-            file_display = '~' + file[len(home_dir):]
+        if file.startswith(start_directory):
+            file_display = '.' + file[len(start_directory):]
         else:
             file_display = file
 
@@ -229,7 +230,6 @@ def display_results(total_lines: int, total_size: int, file_counts: dict, langua
     average_size_human_readable = _format_size(average_size)
     console.print(f"Average Size per File: {average_size_human_readable}")
 
-
 def _format_size(size_in_bytes: float) -> str:
     """Format size in bytes into human-readable format."""
     if size_in_bytes == 0:
@@ -245,8 +245,6 @@ def _format_size(size_in_bytes: float) -> str:
 
     return f"{size_in_bytes:.2f} {units[unit_index]}"
 
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Count lines of code in a directory.")
     parser.add_argument("directory", nargs="?", default=os.getcwd(), help="Directory path to count lines of code.")
@@ -258,4 +256,4 @@ if __name__ == "__main__":
     exclude_dirs = set(args.exclude_dirs) if args.exclude_dirs else DEFAULT_EXCLUDED_DIRS
 
     total_lines, total_size, file_counts, language_totals = count_lines_and_size(args.directory, exclude_filetypes, exclude_dirs)
-    display_results(total_lines, total_size, file_counts, language_totals)
+    display_results(total_lines, total_size, file_counts, language_totals, os.path.abspath(args.directory))
