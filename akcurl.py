@@ -10,7 +10,6 @@ try:
     from rich.console import Console
     from rich.text import Text
 
-    # Removed Panel import
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
@@ -32,7 +31,6 @@ except ImportError:
         def __str__(self):
             return self.text
 
-    # Removed dummy Panel class
 
 console_print = None
 error_print = None
@@ -67,9 +65,7 @@ def setup_printers(no_color):
                 "Warning: 'rich' library not found. Falling back to plain text output.",
                 file=sys.stderr,
             )
-            print(
-                "Install it ('pip install rich') for colored output.", file=sys.stderr
-            )
+            print("Install it ('pip install rich') for colored output.", file=sys.stderr)
 
         def _print_std(*args, **kwargs):
             kwargs.pop("style", None)
@@ -166,9 +162,7 @@ HEADERS_TO_SPLIT = {
 }
 
 
-def fetch_akamai_headers(
-    url, pragma_directives, verbose=False, timeout=10, no_color=False
-):
+def fetch_akamai_headers(url, pragma_directives, verbose=False, timeout=10, no_color=False):
     """
     Fetches headers from a URL with specified Akamai Pragma directives.
     Returns a tuple: (final_status_code, response_headers_dict or None)
@@ -202,9 +196,7 @@ def fetch_akamai_headers(
         )
 
     try:
-        response = requests.get(
-            url, headers=req_headers, timeout=timeout, allow_redirects=True
-        )
+        response = requests.get(url, headers=req_headers, timeout=timeout, allow_redirects=True)
         final_status = response.status_code
         response.raise_for_status()
 
@@ -220,16 +212,12 @@ def fetch_akamai_headers(
             verbose_print(
                 "--- Response Details ---",
                 style=(
-                    "green"
-                    if response.ok
-                    else "red" if not no_color and RICH_AVAILABLE else None
+                    "green" if response.ok else "red" if not no_color and RICH_AVAILABLE else None
                 ),
             )
             if not no_color and RICH_AVAILABLE:
                 status_color = get_status_color(response.status_code)
-                verbose_print(
-                    f"[bold]Status Code:[/bold] [{status_color}]{status_code_str}[/]"
-                )
+                verbose_print(f"[bold]Status Code:[/bold] [{status_color}]{status_code_str}[/]")
                 if history_lines:
                     verbose_print("[bold]Redirect History:[/bold]")
                     for i, resp in enumerate(response.history):
@@ -247,9 +235,7 @@ def fetch_akamai_headers(
             verbose_print(
                 "----------------------",
                 style=(
-                    "green"
-                    if response.ok
-                    else "red" if not no_color and RICH_AVAILABLE else None
+                    "green" if response.ok else "red" if not no_color and RICH_AVAILABLE else None
                 ),
             )
 
@@ -306,9 +292,7 @@ def is_valid_url(url_string):
 def main():
     """Parses arguments and fetches/prints Akamai headers for a given URL."""
     default_pragma_str = ",".join(DEFAULT_AKAMAI_PRAGMA_HEADERS)
-    all_help_text = (
-        f"request all default Akamai Pragma directives:\n({default_pragma_str})"
-    )
+    all_help_text = f"request all default Akamai Pragma directives:\n({default_pragma_str})"
 
     parser = argparse.ArgumentParser(
         description="Fetch HTTP headers from a URL with specified Akamai Pragma directives.",
@@ -320,9 +304,7 @@ def main():
     )
 
     pos_group = parser.add_argument_group("Required Argument")
-    pragma_group = parser.add_argument_group(
-        "Pragma Header Options (choose one or none)"
-    )
+    pragma_group = parser.add_argument_group("Pragma Header Options (choose one or none)")
     opt_group = parser.add_argument_group("Other Options")
 
     pos_group.add_argument("url", metavar="URL", help="The URL to fetch headers from.")
@@ -351,9 +333,7 @@ def main():
         metavar="SEC",
         help="request timeout in seconds.",
     )
-    opt_group.add_argument(
-        "--no-color", action="store_true", help="disable colored output."
-    )
+    opt_group.add_argument("--no-color", action="store_true", help="disable colored output.")
 
     if "-h" in sys.argv or "--help" in sys.argv:
         parser.print_help()
@@ -373,9 +353,7 @@ def main():
     if args.pragma:
         pragma_directives_to_use = args.pragma
         if args.verbose:
-            verbose_print(
-                f"Using specified Pragma directives: {pragma_directives_to_use}\n"
-            )
+            verbose_print(f"Using specified Pragma directives: {pragma_directives_to_use}\n")
     else:
         pragma_directives_to_use = DEFAULT_AKAMAI_PRAGMA_HEADERS
         if args.verbose:
