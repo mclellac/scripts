@@ -10,6 +10,7 @@ try:
     from rich.console import Console
     from rich.text import Text
 
+    # Removed Panel import
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
@@ -37,23 +38,23 @@ console_print = None
 error_print = None
 verbose_print = None
 
-STYLE_AKAMAI_KEY = "bold dim cyan"
-STYLE_XCACHE_KEY = "bold dim magenta"
-STYLE_CACHE_KEY = "bold dim green"
-STYLE_COOKIE_KEY = "bold dim purple"
-STYLE_CONTENT_KEY = "bold dim yellow"
-STYLE_SECURITY_KEY = "bold dim orange_red1"
-STYLE_REDIRECT_KEY = "bold dim blue"
-STYLE_DEFAULT_KEY = "bold dim"
+STYLE_AKAMAI_VALUE = "bold dim cyan"
+STYLE_XCACHE_VALUE = "bold dim magenta"
+STYLE_CACHE_VALUE = "bold dim green"
+STYLE_COOKIE_VALUE = "bold dim purple"
+STYLE_CONTENT_VALUE = "bold dim yellow"
+STYLE_SECURITY_VALUE = "bold dim orange_red1"
+STYLE_REDIRECT_VALUE = "bold dim blue"
+STYLE_DEFAULT_VALUE = "bold dim"
 
-STYLE_AKAMAI_VALUE = "bright_cyan"
-STYLE_XCACHE_VALUE = "bright_magenta"
-STYLE_CACHE_VALUE = "bright_green"
-STYLE_COOKIE_VALUE = "bright_purple"
-STYLE_CONTENT_VALUE = "bright_yellow"
-STYLE_SECURITY_VALUE = "bright_red"
-STYLE_REDIRECT_VALUE = "bright_blue"
-STYLE_DEFAULT_VALUE = "white"
+STYLE_AKAMAI_KEY = "bright_cyan"
+STYLE_XCACHE_KEY = "bright_magenta"
+STYLE_CACHE_KEY = "bright_green"
+STYLE_COOKIE_KEY = "bright_purple"
+STYLE_CONTENT_KEY = "bright_yellow"
+STYLE_SECURITY_KEY = "bright_red"
+STYLE_REDIRECT_KEY = "bright_blue"
+STYLE_DEFAULT_KEY = "white"
 
 
 def setup_printers(no_color):
