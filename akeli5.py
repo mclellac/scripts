@@ -86,7 +86,10 @@ def setup_printers():
         console_print = _console.print
         error_print = _error_console.print
     except Exception as e:
-        print(f"Error initializing rich: {e}. Falling back to plain text.", file=sys.stderr)
+        print(
+            f"Error initializing rich: {e}. Falling back to plain text.",
+            file=sys.stderr,
+        )
 
         def _print_plain_std(*args, **kwargs):
             print(*args, **kwargs)
@@ -127,7 +130,9 @@ def extract_analysis_data(headers: Dict[str, str]) -> Dict[str, Any]:
 
     data["cache_status_raw"] = headers_lower.get("x-cache", "N/A")
     data["cache_status"] = (
-        data["cache_status_raw"].split(" ")[0] if data["cache_status_raw"] != "N/A" else "N/A"
+        data["cache_status_raw"].split(" ")[0]
+        if data["cache_status_raw"] != "N/A"
+        else "N/A"
     )
     data["cache_server_hostname"] = (
         data["cache_status_raw"].split(" from ")[1].split(" ")[0]
@@ -140,10 +145,14 @@ def extract_analysis_data(headers: Dict[str, str]) -> Dict[str, Any]:
     data["edge_server"] = headers_lower.get("x-cache-server", "N/A")
     data["serial"] = headers_lower.get("x-serial", "N/A")
     data["request_id"] = headers_lower.get("x-akamai-request-id", "N/A")
-    data["client_ip"] = headers_lower.get("x-akamai-pragma-client-ip", "N/A").split(",")[0].strip()
+    data["client_ip"] = (
+        headers_lower.get("x-akamai-pragma-client-ip", "N/A").split(",")[0].strip()
+    )
     data["origin_server"] = headers_lower.get("x-origin-server", "N/A")
     data["midmile_rtt"] = headers_lower.get("x-edgeconnect-midmile-rtt", "N/A")
-    data["origin_latency"] = headers_lower.get("x-edgeconnect-origin-mex-latency", "N/A")
+    data["origin_latency"] = headers_lower.get(
+        "x-edgeconnect-origin-mex-latency", "N/A"
+    )
     data["date"] = headers_lower.get("date", "N/A")
     data["content_type"] = headers_lower.get("content-type", "N/A")
     data["content_length"] = headers_lower.get("content-length", "N/A")
@@ -193,7 +202,9 @@ def _format_variable(text: Any) -> Text:
     return Text.from_markup(f"[{style}]{escaped_text}[/]")
 
 
-def _get_analysis_value(data: Dict[str, Any], key: str, default: str = "unknown") -> str:
+def _get_analysis_value(
+    data: Dict[str, Any], key: str, default: str = "unknown"
+) -> str:
     """Gets value from analysis data dict, handling N/A."""
     val = data.get(key, default)
     return str(val) if val and val != "N/A" else default
@@ -231,7 +242,9 @@ def _parse_origin_ttl(
     if cache_control != "unknown":
         s_maxage_match = re.search(r"s-maxage=(\d+)", cache_control, re.IGNORECASE)
         maxage_match = re.search(r"max-age=(\d+)", cache_control, re.IGNORECASE)
-        no_cache_match = re.search(r"no-cache|no-store|private", cache_control, re.IGNORECASE)
+        no_cache_match = re.search(
+            r"no-cache|no-store|private", cache_control, re.IGNORECASE
+        )
 
         if s_maxage_match:
             ttl_seconds = int(s_maxage_match.group(1))
@@ -277,13 +290,19 @@ def print_cache_control_explanation(cache_control_val: str):
     if "public" in directives:
         explanation_parts.append(Text("Public (can be stored by any cache)"))
     if "private" in directives:
-        explanation_parts.append(Text("Private (intended for single user, not shared caches)"))
+        explanation_parts.append(
+            Text("Private (intended for single user, not shared caches)")
+        )
     if "no-cache" in directives:
-        explanation_parts.append(Text("No-Cache (cache must revalidate with origin before using)"))
+        explanation_parts.append(
+            Text("No-Cache (cache must revalidate with origin before using)")
+        )
     if "no-store" in directives:
         explanation_parts.append(Text("No-Store (cannot be cached anywhere)"))
     if "must-revalidate" in directives:
-        explanation_parts.append(Text("Must-Revalidate (cache must revalidate once stale)"))
+        explanation_parts.append(
+            Text("Must-Revalidate (cache must revalidate once stale)")
+        )
 
     maxage_match = re.search(r"max-age=(\d+)", cache_control_val, re.IGNORECASE)
     if maxage_match:
@@ -296,12 +315,15 @@ def print_cache_control_explanation(cache_control_val: str):
     if s_maxage_match:
         secs = int(s_maxage_match.group(1))
         explanation_parts.append(
-            Text("S-Maxage (shared cache TTL): ") + _format_variable(_format_ttl_string(secs))
+            Text("S-Maxage (shared cache TTL): ")
+            + _format_variable(_format_ttl_string(secs))
         )
 
     if not explanation_parts:
         console_print(
-            output_prefix + Text("Contains directives: ") + _format_variable(cache_control_val)
+            output_prefix
+            + Text("Contains directives: ")
+            + _format_variable(cache_control_val)
         )
     else:
         output = output_prefix
@@ -326,7 +348,9 @@ def print_analysis(analysis_data: Dict[str, Any]):
     date_val = _get_analysis_value(analysis_data, "date")
     akamai_network = _get_analysis_value(analysis_data, "akamai_network", "Production")
 
-    cache_key_ttl_str = _parse_cache_key_ttl(cache_key) or _parse_cache_key_ttl(true_cache_key)
+    cache_key_ttl_str = _parse_cache_key_ttl(cache_key) or _parse_cache_key_ttl(
+        true_cache_key
+    )
     origin_ttl_seconds, origin_ttl_source = _parse_origin_ttl(
         cache_control_val, expires_val, date_val
     )
@@ -381,7 +405,9 @@ def print_analysis(analysis_data: Dict[str, Any]):
 
     line2 = Text("  Cacheability: ")
     if cacheable == "YES":
-        line2 += _format_variable("YES") + Text(" (Akamai determined this content could be cached)")
+        line2 += _format_variable("YES") + Text(
+            " (Akamai determined this content could be cached)"
+        )
     elif cacheable == "NO":
         line2 += _format_variable("NO") + Text(
             " (Akamai determined this content should not be cached)"
@@ -392,7 +418,9 @@ def print_analysis(analysis_data: Dict[str, Any]):
 
     line3 = Text("  Cache TTL: ")
     if cache_key_ttl_str:
-        line3 += _format_variable(cache_key_ttl_str) + Text(" (According to Akamai's Cache Key)")
+        line3 += _format_variable(cache_key_ttl_str) + Text(
+            " (According to Akamai's Cache Key)"
+        )
     elif origin_ttl_seconds is not None:
         line3 += (
             _format_variable(origin_ttl_str)
@@ -410,7 +438,9 @@ def print_analysis(analysis_data: Dict[str, Any]):
         console_print(line4)
 
     if cache_control_val != "unknown":
-        line_cc_raw = Text("  Cache-Control Raw: ") + _format_variable(cache_control_val)
+        line_cc_raw = Text("  Cache-Control Raw: ") + _format_variable(
+            cache_control_val
+        )
         console_print(line_cc_raw)
         print_cache_control_explanation(cache_control_val)
 
@@ -440,7 +470,9 @@ def print_analysis(analysis_data: Dict[str, Any]):
 
     line7 = Text("  SureRoute: ")
     if sr_enabled == "true":
-        line7 += _format_variable("Enabled") + Text(" (Akamai optimized the path to origin)")
+        line7 += _format_variable("Enabled") + Text(
+            " (Akamai optimized the path to origin)"
+        )
     elif sr_enabled == "false":
         line7 += _format_variable("Disabled")
     else:
@@ -523,7 +555,9 @@ def fetch_headers_for_analysis(
     req_headers["User-Agent"] = "CBC/Akamai Ananysis/1.0"
 
     try:
-        response = requests.get(url, headers=req_headers, timeout=timeout, allow_redirects=True)
+        response = requests.get(
+            url, headers=req_headers, timeout=timeout, allow_redirects=True
+        )
         final_status = response.status_code
         return final_status, response.headers
 
@@ -563,7 +597,9 @@ def main():
     if len(sys.argv) != 2 or sys.argv[1] in ["-h", "--help"]:
         prog_name = sys.argv[0]
         print(f"Usage: {prog_name} URL")
-        print("\nFetch default Akamai Pragma headers for a URL and print an ELI5 analysis.")
+        print(
+            "\nFetch default Akamai Pragma headers for a URL and print an ELI5 analysis."
+        )
         print("\nExample:")
         print(f"  {prog_name} https://www.example.com")
         sys.exit(0 if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help"] else 1)
@@ -584,7 +620,9 @@ def main():
         status_prefix = "Website answered with code:"
         print_func = error_print if headers is None else console_print
         # Use rich Text object directly for printing status
-        print_func(Text(status_prefix + " ") + Text(str(final_status), style=status_style))
+        print_func(
+            Text(status_prefix + " ") + Text(str(final_status), style=status_style)
+        )
 
     if headers is not None:
         analysis_data = extract_analysis_data(headers)

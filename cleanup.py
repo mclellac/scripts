@@ -31,7 +31,9 @@ class YNValidator(Validator):
     def validate(self, document):
         text = document.text.lower()
         if text not in ["y", "n"]:
-            raise ValidationError(message="Please enter y or n", cursor_position=len(document.text))
+            raise ValidationError(
+                message="Please enter y or n", cursor_position=len(document.text)
+            )
 
 
 def prompt_yn(message):
@@ -98,7 +100,9 @@ def check_directory_arg(directory):
     logger.debug(f"Checking if {directory} is a directory")
     global DEFAULT_DIRECTORY
     if not directory.is_dir():
-        print_warning(f"{directory} is not a directory. Defaulting to {DEFAULT_DIRECTORY}")
+        print_warning(
+            f"{directory} is not a directory. Defaulting to {DEFAULT_DIRECTORY}"
+        )
         check_os_and_set_find()
     else:
         DEFAULT_DIRECTORY = directory
@@ -120,7 +124,9 @@ def draw_box(*message_lines):
     new_message_lines = []
     for line in message_lines:
         if len(line) > TERM_WIDTH - BOX_PADDING * 2:
-            new_message_lines.extend(textwrap.wrap(line, width=TERM_WIDTH - BOX_PADDING * 2))
+            new_message_lines.extend(
+                textwrap.wrap(line, width=TERM_WIDTH - BOX_PADDING * 2)
+            )
         else:
             new_message_lines.append(line)
 
@@ -133,7 +139,9 @@ def draw_box(*message_lines):
         right_padding = TERM_WIDTH - BOX_PADDING * 2 - left_padding - line_length
 
         # Draw the line
-        logger.info(f"{'│':<}{YELLOW}{' ' * left_padding} {line} {' ' * right_padding}{ORANGE}{'│'}")
+        logger.info(
+            f"{'│':<}{YELLOW}{' ' * left_padding} {line} {' ' * right_padding}{ORANGE}{'│'}"
+        )
     logger.info(f"{'│':<79}{'│'}\n{'└'}{'─' * (TERM_WIDTH - 2)}{'┘'}{RESET}")
 
 
@@ -147,7 +155,13 @@ def check_os_and_set_find():
     logger.debug("Performing sanity check")
     global agnostic_find
     if sys.platform.startswith("linux"):
-        agnostic_find = ["find", str(DEFAULT_DIRECTORY), "-regextype", "posix-extended", "-regex"]
+        agnostic_find = [
+            "find",
+            str(DEFAULT_DIRECTORY),
+            "-regextype",
+            "posix-extended",
+            "-regex",
+        ]
     elif sys.platform.startswith("freebsd") or sys.platform.startswith("darwin"):
         agnostic_find = ["find", "-E", str(DEFAULT_DIRECTORY), "-type", "f", "-regex"]
 
@@ -158,6 +172,7 @@ def check_os_and_set_find():
         except Exception as e:
             logging.exception(f"Failed to remove {TEMP_FILE}: {e}")
             sys.exit(1)
+
 
 def find_files():
     """
@@ -171,11 +186,14 @@ def find_files():
         with TEMP_FILE.open("w") as f:
             agnostic_find.append(r".*\.(bak|swp|DS_Store|~)$")
             agnostic_find.append("-print")
-            result = subprocess.run(agnostic_find, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(
+                agnostic_find, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
             f.write(result.stdout)
     except Exception as e:
         logging.exception(f"Failed to find files: {e}")
         sys.exit(1)
+
 
 def count_files():
     """
@@ -254,7 +272,13 @@ def clean_up():
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Clean up backup files.")
-parser.add_argument("directory", nargs="?", type=Path, default=DEFAULT_DIRECTORY, help="directory to clean up")
+parser.add_argument(
+    "directory",
+    nargs="?",
+    type=Path,
+    default=DEFAULT_DIRECTORY,
+    help="directory to clean up",
+)
 parser.add_argument("--debug", action="store_true", help="print debug information")
 args = parser.parse_args()
 

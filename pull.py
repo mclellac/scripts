@@ -20,13 +20,13 @@ class Colors:
 
 
 ICONS = {
-    "github": "",     # GitHub icon
+    "github": "",  # GitHub icon
     "bitbucket": "",  # Bitbucket/Stash icon
-    "gitlab": "",     # GitLab icon
-    "default": "📦",   # Generic package icon
-    "success": "",    # Success checkmark
-    "uptodate": "",   # Up-to-date icon
-    "error": "",      # Error warning sign
+    "gitlab": "",  # GitLab icon
+    "default": "📦",  # Generic package icon
+    "success": "",  # Success checkmark
+    "uptodate": "",  # Up-to-date icon
+    "error": "",  # Error warning sign
 }
 
 
@@ -51,8 +51,9 @@ def run_git_command(command, cwd=None):
         return 1, "", "git command not found"
     except Exception as e:
         print(
-            f"{Colors.RED}An unexpected error occurred: {e}{Colors.RESET}", file=sys.stderr
-        )  
+            f"{Colors.RED}An unexpected error occurred: {e}{Colors.RESET}",
+            file=sys.stderr,
+        )
         return 1, "", str(e)
 
 
@@ -64,19 +65,21 @@ def pull_repositories(target_dir_arg):
     All other output goes to stderr.
     """
     base_src_dir = os.path.join(os.path.expanduser("~"), "Projects", "src")
-    search_dir = os.path.join(base_src_dir, target_dir_arg) if target_dir_arg else base_src_dir
+    search_dir = (
+        os.path.join(base_src_dir, target_dir_arg) if target_dir_arg else base_src_dir
+    )
 
     if not os.path.isdir(search_dir):
         print(
             f"{Colors.RED}Error: Directory not found: {search_dir}{Colors.RESET}",
-            file=sys.stderr,  
+            file=sys.stderr,
         )
         sys.exit(1)
 
     print(
         f"{Colors.CYAN}Searching for repositories under {search_dir}...{Colors.RESET}",
         file=sys.stderr,
-    )  
+    )
 
     git_dirs = []
     for root, dirs, files in os.walk(search_dir):
@@ -88,11 +91,11 @@ def pull_repositories(target_dir_arg):
         print(
             f"{Colors.YELLOW}No Git repositories found under {search_dir}{Colors.RESET}",
             file=sys.stderr,
-        )  
+        )
     else:
         print(
             f"{Colors.CYAN}Found {len(git_dirs)} repositories under {search_dir}. Pulling...{Colors.RESET}",
-            file=sys.stderr,  
+            file=sys.stderr,
         )
 
     overall_status = 0
@@ -103,7 +106,7 @@ def pull_repositories(target_dir_arg):
         if not repo_path.startswith(base_src_dir):
             print(
                 f"{Colors.YELLOW}Warning: Skipping potentially unsafe path: {repo_path}{Colors.RESET}",
-                file=sys.stderr,  
+                file=sys.stderr,
             )
             overall_status = 1
             continue
@@ -116,7 +119,7 @@ def pull_repositories(target_dir_arg):
         except OSError as e:
             print(
                 f"{Colors.RED}Error: Could not change directory to {repo_path}: {e}{Colors.RESET}",
-                file=sys.stderr,  
+                file=sys.stderr,
             )
             overall_status = 1
             # Attempt to change back directory
@@ -147,17 +150,22 @@ def pull_repositories(target_dir_arg):
             elif "gitlab.nm.cbc.ca" in origin_url:
                 icon = ICONS["gitlab"]
 
-        pull_status, pull_stdout, pull_stderr = run_git_command(["git", "pull", "--ff-only"])
+        pull_status, pull_stdout, pull_stderr = run_git_command(
+            ["git", "pull", "--ff-only"]
+        )
         pull_output = pull_stdout + pull_stderr
 
         if pull_status == 0:
-            if "Already up to date" in pull_output or "Already up-to-date" in pull_output:
+            if (
+                "Already up to date" in pull_output
+                or "Already up-to-date" in pull_output
+            ):
                 status_icon = ICONS["uptodate"]
                 status_message = "Already up to date."
                 status_color = Colors.GREEN
                 print(
                     f"{Colors.CYAN}{icon} {Colors.GREEN}{relative_path} ({branch}){Colors.RESET} {status_color}{status_icon} {status_message}{Colors.RESET}",
-                    file=sys.stderr,  
+                    file=sys.stderr,
                 )
             else:
                 status_icon = ICONS["success"]
@@ -165,7 +173,7 @@ def pull_repositories(target_dir_arg):
                 status_color = Colors.GREEN
                 print(
                     f"{Colors.CYAN}{icon} {Colors.GREEN}{relative_path} ({branch}){Colors.RESET} {status_color}{status_icon} {status_message}{Colors.RESET}",
-                    file=sys.stderr,  
+                    file=sys.stderr,
                 )
                 filtered_output = []
                 notice_pattern = re.compile(
@@ -175,7 +183,7 @@ def pull_repositories(target_dir_arg):
                     if not notice_pattern.search(line):
                         filtered_output.append(f"  {line}")
                 if filtered_output:
-                    print("\n".join(filtered_output), file=sys.stderr)  
+                    print("\n".join(filtered_output), file=sys.stderr)
         else:  # pull_status != 0 (Pull failed)
             overall_status = 1
             status_icon = ICONS["error"]
@@ -192,7 +200,10 @@ def pull_repositories(target_dir_arg):
                 or "commit or stash them" in git_error_output_lower
                 or (
                     "overwritten by" in git_error_output_lower
-                    and ("merge" in git_error_output_lower or "pull" in git_error_output_lower)
+                    and (
+                        "merge" in git_error_output_lower
+                        or "pull" in git_error_output_lower
+                    )
                 )
             ):
                 git_error_summary = (
@@ -201,7 +212,7 @@ def pull_repositories(target_dir_arg):
 
             print(
                 f"{Colors.CYAN}{icon} {Colors.GREEN}{relative_path} ({branch}){Colors.RESET} {status_color}{status_icon} {git_error_summary}{Colors.RESET}",
-                file=sys.stderr,  
+                file=sys.stderr,
             )
 
             # Print the raw, detailed output from git
@@ -210,14 +221,16 @@ def pull_repositories(target_dir_arg):
                 for line in pull_output.strip().splitlines():
                     print(
                         f"  {Colors.RED}{line}{Colors.RESET}", file=sys.stderr
-                    )  , indented
+                    ), indented
 
-        os.chdir(current_dir_before_repo_cd)  # Change back to the CWD before entering the repo_path
+        os.chdir(
+            current_dir_before_repo_cd
+        )  # Change back to the CWD before entering the repo_path
 
     print(
         f"{Colors.CYAN}Finished processing repositories under {search_dir}.{Colors.RESET}",
         file=sys.stderr,
-    )  
+    )
 
     final_chdir_success = False
     try:
@@ -226,7 +239,7 @@ def pull_repositories(target_dir_arg):
     except OSError as e:
         print(
             f"{Colors.RED}Error: Could not change script's internal CWD to {search_dir}: {e}{Colors.RESET}",
-            file=sys.stderr,  
+            file=sys.stderr,
         )
         overall_status = 1
 
