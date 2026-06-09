@@ -1,421 +1,379 @@
 #!/usr/bin/env python3
+"""Module for fetching and analyzing Akamai HTTP headers."""
+
+from __future__ import annotations
 
 import argparse
-import requests
-import sys
-from urllib.parse import urlparse
 import re
+import sys
+from typing import TYPE_CHECKING, Callable
+
+import requests
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 try:
-    from rich.console import Console
-    from rich.text import Text
+    from rich.console import Console as _RichConsole
+    from rich.text import Text as _RichText
 
-    RICH_AVAILABLE = True
+    RichConsole: type[_RichConsole | _FallbackConsole] = _RichConsole
+    RichText: type[_RichText | _FallbackText] = _RichText
+    _rich_available = True
 except ImportError:
-    RICH_AVAILABLE = False
+    _rich_available = False
 
-    class Console:
-        pass
+    class _FallbackConsole:
+        """Fallback for rich.console.Console."""
 
-    class Text:
-        def __init__(self, text, style=None):
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            """Initialize the fallback console."""
+
+        def print(self, *_args: object, **_kwargs: object) -> None:
+            """Print a message to the console."""
+
+    class _FallbackText:
+        """Fallback for rich.text.Text."""
+
+        def __init__(self, text: str, style: str | None = None) -> None:
+            """Initialize the fallback text."""
             self.text = text
+            self.style = style
 
         @staticmethod
-        def from_markup(markup):
-            return Text(re.sub(r"\[.*?\]", "", markup))
+        def from_markup(markup: str) -> _FallbackText:
+            """Create a RichText object from markup."""
+            return _FallbackText(re.sub(r"\[.*?\]", "", markup))
 
-        def __add__(self, other):
-            return Text(self.text + other.text)
+        def __add__(self, other: _RichText | _FallbackText) -> _FallbackText:
+            """Add two RichText objects together."""
+            return _FallbackText(self.text + str(other))
 
-        def __str__(self):
+        def __str__(self) -> str:
+            """Return the string representation of the text."""
             return self.text
 
-
-console_print = None
-error_print = None
-verbose_print = None
-
-STYLE_AKAMAI_VALUE = "bold dim cyan"
-STYLE_XCACHE_VALUE = "bold dim magenta"
-STYLE_CACHE_VALUE = "bold dim green"
-STYLE_COOKIE_VALUE = "bold dim purple"
-STYLE_CONTENT_VALUE = "bold dim yellow"
-STYLE_SECURITY_VALUE = "bold dim orange_red1"
-STYLE_REDIRECT_VALUE = "bold dim blue"
-STYLE_DEFAULT_VALUE = "bold dim"
-
-STYLE_AKAMAI_KEY = "bright_cyan"
-STYLE_XCACHE_KEY = "bright_magenta"
-STYLE_CACHE_KEY = "bright_green"
-STYLE_COOKIE_KEY = "bright_purple"
-STYLE_CONTENT_KEY = "bright_yellow"
-STYLE_SECURITY_KEY = "bright_red"
-STYLE_REDIRECT_KEY = "bright_blue"
-STYLE_DEFAULT_KEY = "white"
+    RichConsole = _FallbackConsole
+    RichText = _FallbackText
 
 
-def setup_printers(no_color):
-    """Initializes print functions based on the no_color flag."""
-    global console_print, error_print, verbose_print
+class Printers:
+    """Container for console print functions."""
 
-    if no_color or not RICH_AVAILABLE:
-        if not no_color and not RICH_AVAILABLE:
-            print(
-                "Warning: 'rich' library not found. Falling back to plain text output.",
-                file=sys.stderr,
-            )
-            print("Install it ('pip install rich') for colored output.", file=sys.stderr)
+    console_print: Callable[..., object] = print
 
-        def _print_std(*args, **kwargs):
-            kwargs.pop("style", None)
-            print(*args, **kwargs)
+    @staticmethod
+    def error_print(*args: object, **_kwargs: object) -> int:
+        """Print an error message to stderr."""
+        return sys.stderr.write(" ".join(map(str, args)) + "\n")
 
-        def _print_err(*args, **kwargs):
-            kwargs.pop("style", None)
-            print(*args, file=sys.stderr, **kwargs)
-
-        console_print = _print_std
-        error_print = _print_err
-        verbose_print = _print_err
-
-    else:
-        try:
-            from rich.console import Console as RichConsole
-
-            _console = RichConsole(highlight=False)
-            _error_console = RichConsole(stderr=True, style="bold red")
-            _verbose_console = RichConsole(stderr=True)
-
-            console_print = _console.print
-            error_print = _error_console.print
-            verbose_print = _verbose_console.print
-        except ImportError:
-            print(
-                "Error: 'rich' library failed to import despite being expected.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+    @staticmethod
+    def verbose_print(*args: object, **_kwargs: object) -> int:
+        """Print a verbose message to stderr."""
+        return sys.stderr.write(" ".join(map(str, args)) + "\n")
 
 
-def get_styles(header_name):
-    """Determines the rich style pair (key_style, value_style) for a header."""
-    lower_key = header_name.lower()
-
-    if lower_key.startswith("x-cache"):
-        return STYLE_XCACHE_KEY, STYLE_XCACHE_VALUE
-    elif lower_key.startswith(("x-akamai-", "x-feo", "x-serial", "x-check-cacheable")):
-        return STYLE_AKAMAI_KEY, STYLE_AKAMAI_VALUE
-    elif lower_key == "server" and "akamai" in header_name.lower():
-        return STYLE_AKAMAI_KEY, STYLE_AKAMAI_VALUE
-    elif lower_key in [
-        "cache-control",
-        "pragma",
-        "expires",
-        "age",
-        "vary",
-        "etag",
-        "last-modified",
-    ]:
-        return STYLE_CACHE_KEY, STYLE_CACHE_VALUE
-    elif lower_key == "set-cookie":
-        return STYLE_COOKIE_KEY, STYLE_COOKIE_VALUE
-    elif lower_key.startswith("content-"):
-        return STYLE_CONTENT_KEY, STYLE_CONTENT_VALUE
-    elif lower_key in [
-        "strict-transport-security",
-        "content-security-policy",
-        "x-frame-options",
-        "x-content-type-options",
-        "x-xss-protection",
-        "referrer-policy",
-        "permissions-policy",
-    ]:
-        return STYLE_SECURITY_KEY, STYLE_SECURITY_VALUE
-    elif lower_key == "location":
-        return STYLE_REDIRECT_KEY, STYLE_REDIRECT_VALUE
-    else:
-        return STYLE_DEFAULT_KEY, STYLE_DEFAULT_VALUE
+printers = Printers()
 
 
-DEFAULT_AKAMAI_PRAGMA_HEADERS = [
+STYLE_AKAMAI_VALUE: str = "bold dim cyan"
+STYLE_XCACHE_VALUE: str = "bold dim magenta"
+STYLE_CACHE_VALUE: str = "bold dim green"
+STYLE_COOKIE_VALUE: str = "bold dim purple"
+STYLE_CONTENT_VALUE: str = "bold dim yellow"
+STYLE_SECURITY_VALUE: str = "bold dim orange_red1"
+STYLE_REDIRECT_VALUE: str = "bold dim blue"
+STYLE_DEFAULT_VALUE: str = "bold dim"
+
+STYLE_AKAMAI_KEY: str = "bright_cyan"
+STYLE_XCACHE_KEY: str = "bright_magenta"
+STYLE_CACHE_KEY: str = "bright_green"
+
+DEFAULT_AKAMAI_PRAGMA_HEADERS: list[str] = [
     "akamai-x-cache-on",
     "akamai-x-cache-remote-on",
     "akamai-x-check-cacheable",
     "akamai-x-get-cache-key",
     "akamai-x-get-extracted-values",
-    "akamai-x-get-nonces",
-    "akamai-x-get-request-id",
-    "akamai-x-get-request-trace",
     "akamai-x-get-ssl-client-session-id",
     "akamai-x-get-true-cache-key",
     "akamai-x-serial-no",
     "akamai-x-feo-trace",
-    "akamai-x-get-client-ip",
-    "x-akamai-logging-mode: verbose",
+    "akamai-x-get-request-id",
 ]
 
-HEADERS_TO_SPLIT = {
-    "x-akamai-session-info",
-    "x-akamai-a2-trace",
-    "accept-ch",
-}
+HEADERS_TO_SPLIT: list[str] = [
+    "x-cache",
+    "x-cache-remote",
+    "x-akamai-staging",
+    "x-cache-key",
+    "x-true-cache-key",
+]
 
 
-def fetch_akamai_headers(url, pragma_directives, verbose=False, timeout=10, no_color=False):
+def setup_printers(*, no_color: bool) -> None:
+    """Initialize print functions based on the no_color flag.
+
+    Args:
+        no_color: Whether to disable colored output.
+
     """
-    Fetches headers from a URL with specified Akamai Pragma directives.
-    Returns a tuple: (final_status_code, response_headers_dict or None)
-    """
-    final_status = None
-    if not pragma_directives:
-        req_headers = {}
+    if no_color or not _rich_available:
+        if not no_color and not _rich_available:
+            printers.error_print("Warning: 'rich' library not found. Falling back to plain text output.")
+            printers.error_print("Install it ('pip install rich') for colored output.")
+
+        def _console_print_fallback(*args: object, **_kwargs: object) -> None:
+            sys.stdout.write(" ".join(map(str, args)) + "\n")
+
+        printers.console_print = _console_print_fallback
     else:
-        pragma_value = ",".join(pragma_directives)
-        req_headers = {"Pragma": pragma_value}
+        _console = RichConsole()
+        printers.console_print = _console.print
 
-    req_headers["User-Agent"] = "CBC/Akamai cURL/1.0"
+
+def get_styles(header_name: str) -> tuple[str, str]:
+    """Determine the color style for a header based on its name.
+
+    Args:
+        header_name: The name of the HTTP header.
+
+    Returns:
+        A tuple of (key_style, value_style).
+
+    """
+    lower_key = header_name.lower()
+
+    if lower_key == "x-cache":
+        return STYLE_XCACHE_KEY, STYLE_XCACHE_VALUE
+    if lower_key == "x-cache-remote":
+        return STYLE_XCACHE_KEY, STYLE_XCACHE_VALUE
+    if lower_key in ["x-cache-key", "x-true-cache-key"]:
+        return STYLE_CACHE_KEY, STYLE_CACHE_VALUE
+
+    return _get_complex_styles(lower_key, header_name)
+
+
+def _get_complex_styles(lower_key: str, header_name: str) -> tuple[str, str]:
+    """Handle complex style matching logic."""
+    if lower_key.startswith(("x-akamai-", "x-feo", "x-serial", "x-check-cacheable")):
+        return STYLE_AKAMAI_KEY, STYLE_AKAMAI_VALUE
+    if lower_key == "server" and "akamai" in header_name.lower():
+        return STYLE_AKAMAI_KEY, STYLE_AKAMAI_VALUE
+    if lower_key in ["set-cookie", "cookie", "p3p"]:
+        return STYLE_DEFAULT_VALUE, STYLE_COOKIE_VALUE
+    if lower_key in ["content-type", "content-encoding", "transfer-encoding"]:
+        return STYLE_DEFAULT_VALUE, STYLE_CONTENT_VALUE
+    if lower_key in ["strict-transport-security", "content-security-policy"]:
+        return STYLE_DEFAULT_VALUE, STYLE_SECURITY_VALUE
+
+    style_map = {
+        "location": (STYLE_DEFAULT_VALUE, STYLE_REDIRECT_VALUE),
+        "refresh": (STYLE_DEFAULT_VALUE, STYLE_REDIRECT_VALUE),
+    }
+    return style_map.get(lower_key, (STYLE_DEFAULT_VALUE, STYLE_DEFAULT_VALUE))
+
+
+def _handle_request_error(e: Exception, *, verbose: bool) -> tuple[int | None, Mapping[str, str] | None]:
+    """Handle request exceptions and return status/headers if available.
+
+    Args:
+        e: The exception that occurred.
+        verbose: Whether verbose output is enabled.
+
+    Returns:
+        A tuple of (status_code, response_headers).
+
+    """
+    if isinstance(e, requests.exceptions.SSLError):
+        printers.error_print(f"Error: SSL certificate verification failed: {e}")
+    elif isinstance(e, requests.exceptions.HTTPError):
+        if e.response is not None:
+            final_status = e.response.status_code
+            if not verbose:
+                url_str = e.request.url if e.request else "unknown"
+                printers.error_print(f"Error: HTTP {final_status} for url {url_str}")
+            return final_status, e.response.headers
+        printers.error_print(f"Error: HTTP Error occurred: {e}")
+    elif isinstance(e, requests.exceptions.ConnectionError):
+        printers.error_print(f"Error: Connection failed: {e}")
+    elif isinstance(e, requests.exceptions.Timeout):
+        printers.error_print(f"Error: The request timed out: {e}")
+    elif isinstance(e, requests.exceptions.RequestException):
+        printers.error_print(f"Error: An error occurred during the request: {e}")
+    else:
+        printers.error_print(f"An unexpected error occurred: {e}")
+    return None, None
+
+
+def fetch_akamai_headers(
+    url: str,
+    pragma_directives: list[str] | None = None,
+    timeout: int = 10,
+    *,
+    verbose: bool = False,
+    no_color: bool = False,
+) -> tuple[int | None, Mapping[str, str] | None]:
+    """Fetch HTTP headers from a URL with Akamai pragma directives.
+
+    Args:
+        url: The URL to fetch headers from.
+        pragma_directives: List of Akamai pragma headers to send.
+        timeout: Request timeout in seconds.
+        verbose: Whether to print verbose output.
+        no_color: Whether to disable colored output.
+
+    Returns:
+        A tuple of (status_code, response_headers).
+
+    """
+    if pragma_directives is None:
+        pragma_directives = DEFAULT_AKAMAI_PRAGMA_HEADERS
+
+    pragma_value = ", ".join(pragma_directives)
+    req_headers = {
+        "Pragma": pragma_value,
+        "User-Agent": "Mozilla/5.0 (AkCurl; Akamai Header Analyzer)",
+    }
 
     if verbose:
-        verbose_print(
-            "--- Request Details ---",
-            style="blue" if not no_color and RICH_AVAILABLE else None,
-        )
-        verbose_print(f"URL: {url}")
-        verbose_print(f"Method: GET")
-        verbose_print(f"Timeout: {timeout}s")
-        verbose_print(f"Headers Sent:")
-        for k, v in req_headers.items():
-            if not no_color and RICH_AVAILABLE:
-                verbose_print(f"  [dim]{k}[/]: {v}")
-            else:
-                verbose_print(f"  {k}: {v}")
-        verbose_print(
-            "---------------------",
-            style="blue" if not no_color and RICH_AVAILABLE else None,
-        )
+        _print_request_details(url, timeout, req_headers, no_color=no_color)
 
     try:
         response = requests.get(url, headers=req_headers, timeout=timeout, allow_redirects=True)
+    except Exception as e:  # noqa: BLE001
+        return _handle_request_error(e, verbose=verbose)
+    else:
         final_status = response.status_code
-        response.raise_for_status()
 
         if verbose:
-            status_code_str = f"{response.status_code}"
-            final_url_str = f"{response.url}"
-            history_lines = []
-            if response.history:
-                history_lines.append("Redirect History:")
-                for i, resp in enumerate(response.history):
-                    history_lines.append(f"  {i + 1}: {resp.status_code} {resp.url}")
-
-            verbose_print(
-                "--- Response Details ---",
-                style=(
-                    "green" if response.ok else "red" if not no_color and RICH_AVAILABLE else None
-                ),
-            )
-            if not no_color and RICH_AVAILABLE:
-                status_color = get_status_color(response.status_code)
-                verbose_print(f"[bold]Status Code:[/bold] [{status_color}]{status_code_str}[/]")
-                if history_lines:
-                    verbose_print("[bold]Redirect History:[/bold]")
-                    for i, resp in enumerate(response.history):
-                        verbose_print(
-                            f"  {i + 1}: [{get_status_color(resp.status_code)}]{resp.status_code}[/] [dim]{resp.url}[/]"
-                        )
-                    verbose_print(f"[bold]Final URL:[/bold] [dim]{final_url_str}[/]")
-                else:
-                    verbose_print(f"[bold]Final URL:[/bold] [dim]{final_url_str}[/]")
-            else:
-                verbose_print(f"Status Code: {status_code_str}")
-                for line in history_lines:
-                    verbose_print(line)
-                verbose_print(f"Final URL: {final_url_str}")
-            verbose_print(
-                "----------------------",
-                style=(
-                    "green" if response.ok else "red" if not no_color and RICH_AVAILABLE else None
-                ),
-            )
+            printers.verbose_print("--- Response Details ---")
+            printers.verbose_print(f"Status: {final_status}")
+            printers.verbose_print(f"Final URL: {response.url}")
+            printers.verbose_print(f"Redirects: {len(response.history)}")
+            printers.verbose_print("")
 
         return final_status, response.headers
 
-    except requests.exceptions.Timeout:
-        error_print(f"Error: Request timed out after {timeout} seconds.")
-    except requests.exceptions.SSLError as e:
-        error_print(f"Error: SSL certificate verification failed: {e}")
-    except requests.exceptions.ConnectionError as e:
-        error_print(f"Error: Could not connect to the server: {e}")
-    except requests.exceptions.HTTPError as e:
-        final_status = e.response.status_code
-        if not verbose:
-            error_print(f"Error: HTTP {final_status} for url {e.request.url}")
-        # No need for elif verbose here, status/headers returned below if available
-        return (
-            final_status,
-            e.response.headers,
-        )  # Return status/headers even on HTTP error
-    except requests.exceptions.RequestException as e:
-        error_print(f"Error: An error occurred during the request: {e}")
-    except Exception as e:
-        error_print(f"An unexpected error occurred: {e}")
 
-    return final_status, None
+def _print_request_details(url: str, timeout: int, req_headers: dict[str, str], *, no_color: bool) -> None:
+    """Print request parameters for verbose mode.
 
+    Args:
+        url: The URL being requested.
+        timeout: The request timeout.
+        req_headers: The headers being sent.
+        no_color: Whether to disable colored output.
 
-def get_status_color(status_code):
-    """Return a color style based on HTTP status code."""
-    if not status_code:
-        return "white"
-    if 200 <= status_code < 300:
-        return "green"
-    elif 300 <= status_code < 400:
-        return "blue"
-    elif 400 <= status_code < 500:
-        return "yellow"
-    else:
-        return "red"
+    """
+    printers.verbose_print(f"Requesting URL: {url}")
+    printers.verbose_print("Method: GET")
+    printers.verbose_print(f"Timeout: {timeout}s")
+    printers.verbose_print("Headers Sent:")
+    for k, v in req_headers.items():
+        style_marker = "[dim]" if not no_color and _rich_available else ""
+        end_marker = "[/]" if not no_color and _rich_available else ""
+        printers.verbose_print(f"  {style_marker}{k}{end_marker}: {v}")
+    printers.verbose_print("")
 
 
-def is_valid_url(url_string):
-    """Basic check if the string looks like a valid HTTP/HTTPS URL."""
-    if not isinstance(url_string, str):
-        return False
-    try:
-        result = urlparse(url_string)
-        return all([result.scheme in ["http", "https"], result.netloc])
-    except ValueError:
-        return False
+def _print_headers(headers: Mapping[str, str], *, no_color: bool) -> None:
+    """Print headers with optional styling.
+
+    Args:
+        headers: The headers to print.
+        no_color: Whether to disable colored output.
+
+    """
+    sorted_keys = sorted(headers.keys())
+
+    for key in sorted_keys:
+        value = headers[key]
+        lower_key = key.lower()
+
+        if _rich_available and not no_color:
+            key_style, value_style = get_styles(key)
+            key_text = RichText.from_markup(f"[{key_style}]{key}:[/]")
+            indent = "  "
+
+            if lower_key in HEADERS_TO_SPLIT and "," in value:
+                printers.console_print(key_text)
+                parts = re.split(r",\s*", value)
+                for part in parts:
+                    cleaned_part = part.strip()
+                    if cleaned_part:
+                        value_text = RichText.from_markup(f"[{value_style}]{indent}{cleaned_part}[/]")
+                        printers.console_print(value_text)
+            else:
+                value_text = RichText.from_markup(f"[{value_style}] {value}[/]")
+                printers.console_print(key_text + value_text)
+        elif lower_key in HEADERS_TO_SPLIT and "," in value:
+            printers.console_print(f"{key}:")
+            parts = re.split(r",\s*", value)
+            for part in parts:
+                cleaned_part = part.strip()
+                if cleaned_part:
+                    printers.console_print(f"  {cleaned_part}")
+        else:
+            printers.console_print(f"{key}: {value}")
 
 
-def main():
-    """Parses arguments and fetches/prints Akamai headers for a given URL."""
-    default_pragma_str = ",".join(DEFAULT_AKAMAI_PRAGMA_HEADERS)
-    all_help_text = f"request all default Akamai Pragma directives:\n({default_pragma_str})"
-
+def main() -> None:
+    """Entry point for the AkCurl script."""
     parser = argparse.ArgumentParser(
-        description="Fetch HTTP headers from a URL with specified Akamai Pragma directives.",
-        epilog="Examples:\n"
-        "  %(prog)s https://www.example.com\n"
-        "  %(prog)s -p akamai-x-get-cache-key https://www.example.com\n"
-        "  %(prog)s -v --no-color https://www.example.com",
+        description="Fetch and analyze Akamai HTTP headers.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     pos_group = parser.add_argument_group("Required Argument")
     pragma_group = parser.add_argument_group("Pragma Header Options (choose one or none)")
-    opt_group = parser.add_argument_group("Other Options")
+    opt_group = parser.add_argument_group("Optional Arguments")
 
-    pos_group.add_argument("url", metavar="URL", help="The URL to fetch headers from.")
-
-    mx_group = pragma_group.add_mutually_exclusive_group()
-    mx_group.add_argument(
-        "-p",
-        "--pragma",
-        nargs="+",
-        metavar="DIRECTIVE",
-        help="request specific Akamai Pragma directive(s).",
-    )
-    mx_group.add_argument("-a", "--all", action="store_true", help=all_help_text)
-
-    opt_group.add_argument(
-        "-v",
-        "--verbose",
+    pos_group.add_argument("url", help="The URL to analyze.")
+    pragma_group.add_argument("-p", "--pragma", nargs="+", help="Specify one or more custom Akamai Pragma directives.")
+    pragma_group.add_argument(
+        "-d",
+        "--default-pragma",
         action="store_true",
-        help="print verbose debug information to stderr.",
+        help="Use the internal default list of Akamai Pragma directives.",
     )
-    opt_group.add_argument(
-        "-t",
-        "--timeout",
-        type=int,
-        default=10,
-        metavar="SEC",
-        help="request timeout in seconds.",
-    )
-    opt_group.add_argument("--no-color", action="store_true", help="disable colored output.")
+    opt_group.add_argument("-v", "--verbose", action="store_true", help="print verbose debug information to stderr.")
+    opt_group.add_argument("-t", "--timeout", type=int, default=10, help="request timeout in seconds.")
+    opt_group.add_argument("--no-color", action="store_true", help="Disable rich colored output.")
 
-    if "-h" in sys.argv or "--help" in sys.argv:
-        parser.print_help()
-        sys.exit(0)
+    args = parser.parse_args()
 
-    try:
-        args = parser.parse_args()
-    except SystemExit as e:
-        sys.exit(e.code)
+    url = args.url
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
 
-    setup_printers(args.no_color)
-
-    if not is_valid_url(args.url):
-        error_print(f"Error: Invalid URL provided: '{args.url}'")
-        sys.exit(1)
+    setup_printers(no_color=args.no_color)
 
     if args.pragma:
         pragma_directives_to_use = args.pragma
         if args.verbose:
-            verbose_print(f"Using specified Pragma directives: {pragma_directives_to_use}\n")
+            printers.verbose_print(f"Using specified Pragma directives: {pragma_directives_to_use}\n")
     else:
         pragma_directives_to_use = DEFAULT_AKAMAI_PRAGMA_HEADERS
         if args.verbose:
-            verbose_print(
-                f"Using default Pragma directives: {','.join(pragma_directives_to_use)}\n"
-            )
+            printers.verbose_print(f"Using default Akamai Pragma directives: {pragma_directives_to_use}\n")
 
-    final_status, headers = fetch_akamai_headers(
-        args.url, pragma_directives_to_use, args.verbose, args.timeout, args.no_color
+    status, headers = fetch_akamai_headers(
+        url,
+        pragma_directives=pragma_directives_to_use,
+        timeout=args.timeout,
+        verbose=args.verbose,
+        no_color=args.no_color,
     )
 
-    if final_status is not None:
-        status_style = get_status_color(final_status)
-        status_prefix = "- Status Code:"
-        if args.no_color or not RICH_AVAILABLE:
-            console_print(f"{status_prefix} {final_status}")
-        else:
-            console_print(f"[{status_style}]{status_prefix} {final_status}[/]")
-
-    if headers is not None:
-        for key, value in sorted(headers.items(), key=lambda item: item[0].lower()):
-            lower_key = key.lower()
-
-            if args.no_color or not RICH_AVAILABLE:
-                indent = "  "
-                if lower_key in HEADERS_TO_SPLIT and "," in value:
-                    parts = re.split(r",\s*", value)
-                    console_print(f"{key}:")
-                    for part in parts:
-                        cleaned_part = part.strip()
-                        if cleaned_part:
-                            console_print(f"{indent}{cleaned_part}")
-                else:
-                    console_print(f"{key}: {value}")
-            else:
-                key_style, value_style = get_styles(key)
-                if RICH_AVAILABLE:
-                    from rich.text import Text as RichText
-                else:
-                    RichText = Text
-                key_text = RichText.from_markup(f"[{key_style}]{key}:[/]")
-                indent = "  "
-
-                if lower_key in HEADERS_TO_SPLIT and "," in value:
-                    console_print(key_text)
-                    parts = re.split(r",\s*", value)
-                    for part in parts:
-                        cleaned_part = part.strip()
-                        if cleaned_part:
-                            value_text = RichText.from_markup(
-                                f"[{value_style}]{indent}{cleaned_part}[/]"
-                            )
-                            console_print(value_text)
-                else:
-                    value_text = RichText.from_markup(f"[{value_style}] {value}[/]")
-                    console_print(key_text + value_text)
-
+    if status is not None and headers is not None:
+        printers.console_print(f"HTTP Status: {status}")
+        printers.console_print("-" * 40)
+        _print_headers(headers, no_color=args.no_color)
         sys.exit(0)
 
-    else:
-        error_print("Failed to retrieve headers.")
-        sys.exit(1)
+    printers.error_print("Failed to retrieve headers.")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

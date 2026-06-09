@@ -1,52 +1,90 @@
 #!/usr/bin/env python3
+"""Module for extracting domain names from a webpage."""
+
+from __future__ import annotations
+
 import re
-import requests
 import sys
 
+import requests
 
-def fetch_webpage(url):
+
+def fetch_webpage(url: str) -> str | None:
+    """Fetch the content of a webpage.
+
+    Args:
+        url: The URL of the webpage to fetch.
+
+    Returns:
+        The content of the webpage as a string, or None if the fetch fails.
+
+    """
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        sys.stderr.write(f"Error fetching webpage: {e}\n")
+        return None
+    else:
         return response.text
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching webpage: {e}")
-        sys.exit(1)
 
 
-def extract_matches(content, regex):
+def extract_matches(content: str, regex: str) -> list[str]:
+    """Extract all matches of a regex from a string.
+
+    Args:
+        content: The string to search.
+        regex: The regular expression pattern to use.
+
+    Returns:
+        A list of unique strings matching the regex, filtered for valid domains.
+
+    """
     try:
-        matches = re.findall(regex, content)
+        matches: list[str] = re.findall(regex, content)
         # Filter out empty and undesired 'http://' or 'https://' only objects.
-        matches = [
-            match for match in matches if match not in ("http://fast.", "http://", "https://", "")
-        ]
-        return matches
+        # Break long list comprehension for readability
+        filtered_matches = [m for m in matches if m not in ("http://fast.", "http://", "https://", "")]
+        return sorted(set(filtered_matches))
     except re.error as e:
-        print(f"Error compiling regular expression: {e}")
-        sys.exit(1)
+        sys.stderr.write(f"Regex error: {e}\n")
+        return []
 
 
-def validate_url(url):
+def validate_url(url: str) -> bool:
+    """Validate if a string is a properly formatted URL.
+
+    Args:
+        url: The string to validate.
+
+    Returns:
+        True if the URL is valid, False otherwise.
+
+    """
     regex = r"^(https?://)?(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
-    if not re.match(regex, url):
-        print("Invalid URL")
+    return re.match(regex, url) is not None
+
+
+def main() -> None:
+    """Entry point for the domain extractor script."""
+    arg_count_threshold = 2
+    if len(sys.argv) < arg_count_threshold:
+        sys.stderr.write(f"Usage: {sys.argv[0]} <URL>\n")
         sys.exit(1)
 
+    url = sys.argv[1]
+    if not validate_url(url):
+        sys.stderr.write(f"Invalid URL: {url}\n")
+        sys.exit(1)
 
-if len(sys.argv) != 2:
-    print("Usage: python3 script.py <url>")
-    sys.exit(1)
+    content = fetch_webpage(url)
+    if content:
+        # Regex for finding potential domain names/URLs
+        domain_regex = r"https?://(?:[a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+"
+        domains = extract_matches(content, domain_regex)
+        for domain in domains:
+            sys.stdout.write(f"{domain}\n")
 
-url = sys.argv[1]
-validate_url(url)
 
-content = fetch_webpage(url)
-regex = r"(https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+)|(\b(?:\d{1,3}\.){3}\d{1,3}\b)"
-matches = extract_matches(content, regex)
-
-# Sort matches and remove duplicates
-matches = sorted(set(matches))
-
-for match in matches:
-    if match:
-        print(match[0])
+if __name__ == "__main__":
+    main()

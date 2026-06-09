@@ -1,304 +1,262 @@
 #!/usr/bin/env python3
-import argparse
+"""Module for cleaning up temporary files and backup files."""
+
+from __future__ import annotations
+
 import logging
-import sys
 import subprocess
-import textwrap
+import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from prompt_toolkit import prompt
-from prompt_toolkit.validation import Validator, ValidationError
+from prompt_toolkit.validation import ValidationError, Validator
+
+if TYPE_CHECKING:
+    from prompt_toolkit.document import Document
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger: logging.Logger = logging.getLogger(__name__)
+
+# Constants for UI
+TERM_WIDTH: int = 80
+BOX_PADDING: int = 2
+TEMP_FILE: Path = Path("/tmp/cleanup_files.txt")  # noqa: S108
+FIND_CMD: str = "/usr/bin/find"
+
+# ANSI color codes
+ORANGE: str = "\033[38;5;214m"
+YELLOW: str = "\033[38;5;226m"
+GREEN: str = "\033[38;5;46m"
+RED: str = "\033[38;5;196m"
+WHITE: str = "\033[38;5;231m"
+RESET: str = "\033[0m"
 
 
-# Set default values
-DEFAULT_DIRECTORY = Path.home()
-TEMP_FILE = DEFAULT_DIRECTORY / f".{Path(sys.argv[0]).name}.log"
+class CleanupState:
+    """Container for cleanup script global state."""
 
-# Define color codes
-RED = "\033[31m"
-GREEN = "\033[32m"
-WHITE = "\033[37m"
-YELLOW = "\033[33m"
-ORANGE = "\033[38;5;172m"
-RESET = "\033[0m"
+    def __init__(self) -> None:
+        """Initialize state."""
+        self.num_files: int = 0
+        self.agnostic_find: list[str] = []
 
-# Constants
-TERM_WIDTH = 80
-BOX_PADDING = 2
+
+state = CleanupState()
 
 
 class YNValidator(Validator):
-    def validate(self, document):
+    """Validator for yes/no input."""
+
+    def validate(self, document: Document) -> None:
+        """Validate that the input is 'y' or 'n'."""
         text = document.text.lower()
         if text not in ["y", "n"]:
-            raise ValidationError(
-                message="Please enter y or n", cursor_position=len(document.text)
-            )
+            raise ValidationError(message="Please enter 'y' or 'n'")
 
 
-def prompt_yn(message):
-    """
-    Prompt the user for a yes/no answer.
+def prompt_yn(message: str) -> bool:
+    """Prompt the user for a yes/no answer.
 
     Args:
-        message (str): The message to display to the user.
+        message: The message to display to the user.
 
     Returns:
-        bool: True if the user entered 'y', False if the user entered 'n'.
+        True if the user entered 'y', False if the user entered 'n'.
+
     """
     logger.debug("Prompting user for yes/no answer")
     while True:
-        response = prompt(f"{message} (y/n): ", validator=YNValidator())
-        if response.lower() == "y":
-            return True
-        elif response.lower() == "n":
+        choice = _get_user_choice(message)
+        if choice is None:
             return False
+        if choice == "y":
+            return True
+        if choice == "n":
+            return False
+    return False
 
 
-def print_success(message):
-    """
-    Print a success message.
-
-    Args:
-        message (str): The success message to print.
-    """
-    logger.info(f"{GREEN}{message}{WHITE}")
+def _get_user_choice(message: str) -> str | None:
+    """Get choice from user with EOF handling."""
+    try:
+        return input(f"{message} (y/n): ").lower()
+    except EOFError:
+        return None
 
 
-def print_info(message):
-    """
-    Print an informational message.
-
-    Args:
-        message (str): The informational message to print.
-    """
-    message = message or "Error: No message passed"
-    logger.info(f"{GREEN}{message}{WHITE}")
-
-
-def print_warning(message):
-    """
-    Print a warning message.
+def print_success(message: str) -> None:
+    """Print a success message in green.
 
     Args:
-        message (str): The warning message to print.
+        message: The success message to print.
+
     """
-    message = message or "Error: No message passed"
-    logger.warning(f"{RED}{message}{WHITE}")
+    sys.stdout.write(f"{GREEN}{message}{WHITE}\n")
 
 
-def check_directory_arg(directory):
-    """
-    Check if the argument is a directory.
+def print_info(message: str | None) -> None:
+    """Print an informational message in green.
 
     Args:
-        directory (Path): The directory to check.
+        message: The informational message to print.
 
-    Returns:
-        None
     """
-    logger.debug(f"Checking if {directory} is a directory")
-    global DEFAULT_DIRECTORY
+    msg = message or "Error: No message passed"
+    sys.stdout.write(f"{GREEN}{msg}{WHITE}\n")
+
+
+def print_warning(message: str | None) -> None:
+    """Print a warning message in red.
+
+    Args:
+        message: The warning message to print.
+
+    """
+    msg = message or "Error: No message passed"
+    sys.stderr.write(f"{RED}{msg}{WHITE}\n")
+
+
+def check_directory_arg(directory: Path) -> None:
+    """Check if the argument is a valid directory.
+
+    Args:
+        directory: The directory path to check.
+
+    """
+    logger.debug("Checking if %s is a directory", directory)
     if not directory.is_dir():
-        print_warning(
-            f"{directory} is not a directory. Defaulting to {DEFAULT_DIRECTORY}"
-        )
-        check_os_and_set_find()
-    else:
-        DEFAULT_DIRECTORY = directory
-        check_os_and_set_find()
+        print_warning(f"Error: {directory} is not a directory")
+        sys.exit(1)
 
 
-def draw_box(*message_lines):
-    """
-    Draw a box around a message.
+def draw_box(*message_lines: str) -> None:
+    """Draw a decorative box around a message.
 
     Args:
-        *message_lines (str): The message lines to display in the box.
+        *message_lines: The message lines to display in the box.
 
-    Returns:
-        None
     """
     logger.debug("Drawing message box")
-    # Split message into multiple lines if it's longer than TERM_WIDTH - BOX_PADDING * 2
-    new_message_lines = []
+    new_message_lines: list[str] = []
+    max_line_width = TERM_WIDTH - BOX_PADDING * 2 - 2
+
     for line in message_lines:
-        if len(line) > TERM_WIDTH - BOX_PADDING * 2:
-            new_message_lines.extend(
-                textwrap.wrap(line, width=TERM_WIDTH - BOX_PADDING * 2)
-            )
+        if len(line) > max_line_width:
+            _wrap_line(line, max_line_width, new_message_lines)
         else:
             new_message_lines.append(line)
 
     # Draw the box
-    logger.info(f"{ORANGE}┌{'─' * (TERM_WIDTH - 2)}┐\n{'│':<79}{'│'}")
-    for i, line in enumerate(new_message_lines):
-        # Calculate padding for each line
+    sys.stdout.write(f"{ORANGE}┌{'─' * (TERM_WIDTH - 2)}┐\n{'│':<79}{'│'}\n")
+    for line in new_message_lines:
         line_length = len(line)
         left_padding = (TERM_WIDTH - BOX_PADDING * 2 - line_length) // 2
         right_padding = TERM_WIDTH - BOX_PADDING * 2 - left_padding - line_length
-
-        # Draw the line
-        logger.info(
-            f"{'│':<}{YELLOW}{' ' * left_padding} {line} {' ' * right_padding}{ORANGE}{'│'}"
-        )
-    logger.info(f"{'│':<79}{'│'}\n{'└'}{'─' * (TERM_WIDTH - 2)}{'┘'}{RESET}")
+        sys.stdout.write(f"{'│':<}{YELLOW}{' ' * left_padding} {line} {' ' * right_padding}{ORANGE}{'│'}\n")
+    sys.stdout.write(f"{'│':<79}{'│'}\n{'└'}{'─' * (TERM_WIDTH - 2)}{'┘'}{RESET}\n")
 
 
-def check_os_and_set_find():
-    """
-    Check the operating system and set the find command accordingly.
+def _wrap_line(line: str, max_line_width: int, result_lines: list[str]) -> None:
+    """Wrap a long line into multiple lines."""
+    words = line.split()
+    current_line = ""
+    for word in words:
+        if len(current_line) + len(word) + 1 <= max_line_width:
+            current_line += word + " "
+        else:
+            result_lines.append(current_line.strip())
+            current_line = word + " "
+    result_lines.append(current_line.strip())
 
-    Returns:
-        None
-    """
+
+def check_os_and_set_find() -> None:
+    """Check the operating system and set the find command accordingly."""
     logger.debug("Performing sanity check")
-    global agnostic_find
-    if sys.platform.startswith("linux"):
-        agnostic_find = [
-            "find",
-            str(DEFAULT_DIRECTORY),
-            "-regextype",
-            "posix-extended",
-            "-regex",
-        ]
-    elif sys.platform.startswith("freebsd") or sys.platform.startswith("darwin"):
-        agnostic_find = ["find", "-E", str(DEFAULT_DIRECTORY), "-type", "f", "-regex"]
-
-    if TEMP_FILE.is_file():
-        try:
-            TEMP_FILE.unlink()
-            draw_box(f"removing {TEMP_FILE}")
-        except Exception as e:
-            logging.exception(f"Failed to remove {TEMP_FILE}: {e}")
-            sys.exit(1)
+    if sys.platform == "darwin":
+        state.agnostic_find = [FIND_CMD, "-E", ".", "-type", "f", "-regex"]
+    else:
+        state.agnostic_find = [FIND_CMD, ".", "-type", "f", "-regextype", "posix-egrep", "-regex"]
 
 
-def find_files():
-    """
-    Find files that match the regex and write to temporary file.
-
-    Returns:
-        None
-    """
+def find_files() -> None:
+    """Find files matching the cleanup pattern and write to a temporary file."""
     logger.debug("Finding files")
     try:
         with TEMP_FILE.open("w") as f:
-            agnostic_find.append(r".*\.(bak|swp|DS_Store|~)$")
-            agnostic_find.append("-print")
-            result = subprocess.run(
-                agnostic_find, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            cmd = [*state.agnostic_find, r".*\.(bak|swp|DS_Store|~)$", "-print"]
+            result = subprocess.run(  # noqa: S603
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
             )
             f.write(result.stdout)
-    except Exception as e:
-        logging.exception(f"Failed to find files: {e}")
+    except OSError:
+        logger.exception("Failed to find files")
         sys.exit(1)
 
 
-def count_files():
-    """
-    Count the number of files to be removed.
-
-    Returns:
-        None
-    """
+def count_files() -> None:
+    """Count the number of lines (files) in the temporary results file."""
     logger.debug("Counting files")
     try:
         with TEMP_FILE.open() as f:
-            global num_files
-            num_files = len(f.readlines())
-    except Exception as e:
-        logging.exception(f"Failed to count files: {e}")
+            lines = f.readlines()
+            state.num_files = len(lines)
+    except OSError:
+        logger.exception("Failed to count files")
         sys.exit(1)
 
 
-def display_box():
-    """
-    Display message box with number of files to be removed.
-
-    Returns:
-        None
-    """
+def display_box() -> None:
+    """Display the summary box with the count of files to be removed."""
     logger.debug("Displaying message box")
-    try:
-        with TEMP_FILE.open() as f:
-            file_names = [line.strip() for line in f]
-            if num_files > 0:
-                message_lines = [f"{len(file_names)} files to be removed:"]
-                for name in file_names:
-                    message_lines.append(f"{name}")
-                draw_box(*message_lines)
-            else:
-                print_info("No files found to remove.")
-    except Exception as e:
-        logging.exception(f"Failed to display message: {e}")
-        sys.exit(1)
+    draw_box(f"Found {state.num_files} files to be removed.")
 
 
-def remove_files():
-    """
-    Remove the files.
-
-    Returns:
-        None
-    """
+def remove_files() -> None:
+    """Iterate through the temporary file and remove each listed file."""
     logger.debug("Removing files")
     try:
         with TEMP_FILE.open() as f:
             for line in f:
-                line = line.strip()
-                print_warning(line)
-                Path(line).unlink()
-    except Exception as e:
-        logging.exception(f"Failed to remove files: {e}")
+                _remove_single_file(line.strip())
+    except OSError:
+        logger.exception("Failed to remove files")
         sys.exit(1)
 
 
-def clean_up():
-    """
-    Clean up the temporary files.
+def _remove_single_file(file_path_str: str) -> None:
+    """Remove a single file if it exists."""
+    file_path = Path(file_path_str)
+    if file_path.is_file():
+        file_path.unlink()
 
-    Returns:
-        None
-    """
+
+def clean_up() -> None:
+    """Remove the temporary file used for storage."""
     logger.debug("Cleaning up temporary files")
     if TEMP_FILE.is_file():
-        try:
-            TEMP_FILE.unlink()
-        except Exception as e:
-            logging.exception(f"Failed to remove {TEMP_FILE}: {e}")
-            sys.exit(1)
+        TEMP_FILE.unlink()
 
 
-# Parse command-line arguments
-parser = argparse.ArgumentParser(description="Clean up backup files.")
-parser.add_argument(
-    "directory",
-    nargs="?",
-    type=Path,
-    default=DEFAULT_DIRECTORY,
-    help="directory to clean up",
-)
-parser.add_argument("--debug", action="store_true", help="print debug information")
-args = parser.parse_args()
+def main() -> None:
+    """Execute the cleanup script logic."""
+    check_os_and_set_find()
+    find_files()
+    count_files()
+    display_box()
 
-if args.debug:
-    logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
-else:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-logger = logging.getLogger(__name__)
+    if state.num_files > 0:
+        if prompt_yn("Are you sure you want to delete these files?"):
+            remove_files()
+            print_success("Cleanup complete.")
+        else:
+            print_info("Cleanup aborted.")
 
-check_directory_arg(args.directory)
+    clean_up()
 
-find_files()
-count_files()
-display_box()
 
-if num_files > 0:
-    if prompt_yn("Are you sure you want to delete these files?"):
-        remove_files()
-        print_success("Cleanup complete.")
-    else:
-        print_info("Cleanup aborted.")
-
-clean_up()
+if __name__ == "__main__":
+    main()
