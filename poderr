@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# poderror.sh
+####
+set -o errexit ; set -o nounset
+
+tmpfile="/tmp/poderror"
+
+[ -f ${tmpfile} ] && rm ${tmpfile}
+[ -x "$(command -v "oc")" ] && echo "[OK] oc binary" ||  echo "You will need to install the oc binary to run this script.";
+
+if ! oc whoami &>/dev/null; then
+    echo "Logging into ose.dev.nm.cbc.ca"
+    echo -n "Password: "
+    oc login https://ose.dev.nm.cbc.ca:10043 --username="$(whoami)" &>/dev/null && echo
+else
+    echo "Already logged in as $(oc whoami)"
+fi
+
+echo "Checking projects for problem images. Please stand by."
+oc get pods --all-namespaces=true | grep -E '(Error|MatchNodeSelector|Evicted|CrashLoopBackOff|ImagePullBackOff)'  | awk '{print $1 " " $2 " "   $4}' > ${tmpfile}
+
+printf '%s┌' && printf '%.0s─' {0..100} && printf '┐\n' && printf '│%100s │\n'
+printf "│ %-24s  │ %-40s │ %-18s │ %-7s │\n" "Project" "Pod Name" "Error" "Status"
+printf '│%100s │\n' && printf  '└' && printf '%.0s─' {0..100}  && printf '┘\n%s'
+printf '%s┌' && printf '%.0s─' {0..100} && printf '┐\n' && printf '│%100s │\n'
+
+while IFS=" " read -r project pod error
+do
+    oc delete pod "${pod}" -n "${project}" &>/dev/null
+    # The openshift-ansible-service-broker project name is too long.
+    # let's shorten it here so we can print the table without messing
+    # it up.
+    if [[ ${project} = "openshift-ansible-service-broker" ]]; then
+        project="openshift-ansible-ser..."
+    fi
+
+    printf "│ %-24s  │ %-40s │ %-18s │ %-7s │\n" "${project}" "${pod}" "${error}" "DELETED"
+done < ${tmpfile}
+printf '│%100s │\n' && printf  '└' && printf '%.0s─' {0..100}  && printf '┘\n%s'

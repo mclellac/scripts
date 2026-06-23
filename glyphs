@@ -1,0 +1,14 @@
+#!/usr/bin/env zsh
+
+#for y in $(seq 0 524287); do
+
+for y in $(seq 0 5242); do
+
+    for x in $(seq 0 19); do
+        a=$(($y * 20 + $x))
+        #echo -ne "$a \\u$a "
+        echo -ne "\\u$a "
+    done
+
+    echo
+done
